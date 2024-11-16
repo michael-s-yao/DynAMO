@@ -114,6 +114,5 @@ progress/
 checkpoints/
 
 # Datasets and outputs
-data/
 db-results/
 *.out
