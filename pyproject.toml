@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dogambo"
+version = "0.0.1"
+description = "Diversity-optimized generative adversarial offline optimization"
+readme = "README.md"
+requires-python = "<3.9"
+license = {file = "LICENSE"}
+keywords = ["offline-optimization", "AI4Science"]
+authors = [
+  {name = "Michael S. Yao", email = "michael.yao@pennmedicine.upenn.edu"},
+]
+maintainers = [
+  {name = "Michael S. Yao", email = "michael.yao@pennmedicine.upenn.edu"},
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Researchers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+  "botorch",
+  "keras<2.11",
+  "design-bench[all]",
+  "lightning",
+  "torch",
+  "click",
+  "gdown",
+  "numpy<2",
+  "morphing-agents",
+  "Cython<3",
+  "transforms3d",
+  "scikit-learn<1"
+]
+
+[project.optional-dependencies]
+dev = ["flake8", "matplotlib"]
+
+[project.urls]
+"Homepage" = "https://github.com/michael-s-yao/do-gambo"
