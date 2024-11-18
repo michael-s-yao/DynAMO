@@ -56,7 +56,7 @@ override_deprecations()
 torch.set_default_dtype(torch.float64)
 
 
-from . import data, models, utils, policy  # noqa
+from . import data, models, metrics, utils, optim  # noqa
 
 
-__all__ = ["data", "models", "utils", "policy"]
+__all__ = ["data", "models", "metrics", "utils", "optim"]

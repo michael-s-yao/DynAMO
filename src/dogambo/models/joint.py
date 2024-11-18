@@ -17,13 +17,7 @@ from typing import Any, Dict, Final, Optional
 from ..data import DesignBenchBatch
 from .mlp import MLP
 from .vae import IdentityVAE, InfoTransformerVAE
-
-
-class KLDLoss(nn.Module):
-    def forward(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        return -0.5 * torch.sum(
-            1.0 + logvar - torch.pow(mu, 2) - torch.exp(logvar).sum()
-        )
+from ..metrics import KLDivergence
 
 
 class EncDecPropModule(pl.LightningModule):
@@ -60,7 +54,7 @@ class EncDecPropModule(pl.LightningModule):
                 self.task.num_classes, **self.vae_kwargs
             )
             self.recon_loss = nn.CrossEntropyLoss()
-            self.kld_loss = KLDLoss()
+            self.kld_loss = KLDivergence()
         else:
             self.vae = IdentityVAE(self.task.input_size)
 

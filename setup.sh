@@ -26,7 +26,7 @@ cd $sitedir
 gdown 1SmRshNTSuMI3DxfGjfJA3463V6Hikw6_
 unzip design_bench_data.zip -d design_bench_data
 rm design_bench_data.zip
-cd $PWD
+cd $cmd
 
 # Train the surrogate and VAE models.
 python surrogate.py -t TFBind8-Exact-v0

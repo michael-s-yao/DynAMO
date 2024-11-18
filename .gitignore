@@ -115,4 +115,5 @@ checkpoints/
 
 # Datasets and outputs
 db-results/
+results/
 *.out

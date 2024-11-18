@@ -8,12 +8,11 @@ Author(s):
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import numpy as np
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
-from typing import Sequence, Optional, Tuple
+from typing import Final, Sequence, Optional, Union
 
 
 def Block(
@@ -141,7 +140,8 @@ class LipschitzMLP(MLP):
         final_activation: Optional[str] = None,
         hidden_activation: str = "LeakyReLU",
         use_batch_norm: bool = False,
-        c: float = 0.01
+        c: float = 0.01,
+        verbose: bool = False
     ):
         """
         Args:
@@ -155,6 +155,7 @@ class LipschitzMLP(MLP):
                 `LeakyReLU`, `GELU`].
             use_batch_norm: whether to apply batch normalization.
             c: weight clipping parameter. Default 0.01.
+            verbose: whether to print verbose outputs. Default False.
         """
         super().__init__(
             in_dim=in_dim,
@@ -165,7 +166,8 @@ class LipschitzMLP(MLP):
             hidden_activation=hidden_activation,
             use_batch_norm=use_batch_norm
         )
-        self._c = c
+        self._c: Final[float] = c
+        self._verbose: Final[bool] = verbose
         self.clipper = WeightClipper(c=self._c)
 
     def fit(
@@ -173,9 +175,10 @@ class LipschitzMLP(MLP):
         Xp: torch.Tensor,
         Xq: torch.Tensor,
         p_sampling_prob: Optional[torch.Tensor] = None,
+        q_sampling_prob: Optional[np.ndarray] = None,
         lr: float = 0.001,
         batch_size: int = 128,
-        seed: int = 0,
+        rng: Optional[Union[int, np.random.Generator]] = None,
         patience: int = 100
     ) -> nn.Module:
         """
@@ -187,33 +190,44 @@ class LipschitzMLP(MLP):
                 number of designs and D the number of design dimensions.
             p_sampling_prob: an optional tensor of shape N specifying the
                 sampling probability over the real reference designs.
+            q_sampling_prob: an optional array of shape N specifying the
+                sampling probability over the generated designs.
             lr: learning rate. Default 0.001.
             batch_size: batch size. Default 128.
-            seed: seed. Default 0.
+            rng: optional seed or random number generator.
             patience: patience. Default 100.
         Returns:
             The fitted source critic model.
         """
         self.train()
-        cache, Wd = [-float("inf")] * patience, 0.0
+        cache, Wd = [-float("inf")] * patience, torch.zeros(1)
         if p_sampling_prob is not None and isinstance(
             p_sampling_prob, torch.Tensor
         ):
             p_sampling_prob = p_sampling_prob.detach().cpu().numpy()
         if p_sampling_prob is not None:
             p_sampling_prob = p_sampling_prob.squeeze()
+        if q_sampling_prob is not None:
+            q_sampling_prob = q_sampling_prob.squeeze()
+        q_sampling_prob = q_sampling_prob / np.sum(q_sampling_prob)
 
         def generator():
-            while not np.isclose(Wd, min(cache), rtol=1e-3) or Wd < min(cache):
+            while not np.isclose(Wd.item(), min(cache), rtol=1e-3) or (
+                Wd.item() < min(cache)
+            ):
                 yield
 
         optimizer = optim.Adam(self.parameters(), lr=lr)
 
-        rng = np.random.default_rng(seed=(seed + sum([ord(c) for c in "fit"])))
-        with tqdm(generator(), desc="Fitting Source Critic") as pbar:
+        if rng is None or not isinstance(rng, np.random.Generator):
+            rng = np.random.default_rng(seed=rng)
+        with tqdm(
+            generator(),
+            desc="Fitting Source Critic",
+            disable=(not self._verbose)
+        ) as pbar:
             for _ in pbar:
                 optimizer.zero_grad()
-
                 pi = rng.choice(
                     Xp.size(dim=0),
                     min(Xp.size(dim=0), batch_size),
@@ -223,20 +237,30 @@ class LipschitzMLP(MLP):
                 qi = rng.choice(
                     Xq.size(dim=0),
                     min(Xq.size(dim=0), batch_size),
-                    replace=False
+                    replace=False,
+                    p=q_sampling_prob
                 )
 
-                Ecp, Ecq = self(Xp[pi]).mean(), self(Xq[qi]).mean()
-                (-Ecp + Ecq + (Ecp + Ecq).abs()).backward()
+                Wd = self.Wd(Xp[pi], Xq[qi])
+                (-1.0 * Wd).backward()
                 optimizer.step()
                 self.clipper(self)
-                Wd = (Ecp - Ecq).item()
-                cache = cache[1:] + [Wd]
-                pbar.set_postfix(Wd=Wd)
+                cache = cache[1:] + [Wd.item()]
+                pbar.set_postfix(Wd=Wd.item())
         self.eval()
         return self
 
     def K(self, max_iters: float = 100, atol: float = 1e-6) -> float:
+        """
+        Estimates the global Lipschitz constant of the neural network.
+        Input:
+            max_iters: maximum number of iterations to use in the fast
+                iterative SVD estimation method. Default 100.
+            atol: absolute tolerance to threshold algorithm convergence.
+                Default 1e-6.
+        Returns:
+            The global Lipschitz constant of the neural network.
+        """
         k = 1.0
         for name, A in self.named_parameters():
             if "weight" not in name:
@@ -255,70 +279,18 @@ class LipschitzMLP(MLP):
             k = k * sigma
         return k.item()
 
-
-class MLPLightningModule(pl.LightningModule):
-    def __init__(
-        self,
-        in_dim: int,
-        out_dim: int,
-        hidden_dims: Sequence[int],
-        dropout: float = 0.0,
-        final_activation: Optional[str] = None,
-        hidden_activation: str = "LeakyReLU",
-        use_batch_norm: bool = False,
-        learning_rate: float = 0.001,
-    ):
+    def Wd(self, Xp: torch.Tensor, Xq: torch.Tensor) -> torch.Tensor:
         """
-        Args:
-            in_dim: dimensions of input data.
-            out_dim: dimensions of mode output.
-            hidden_dims: dimensions of the hidden intermediate layers.
-            dropout: dropout. Default 0.1.
-            final_activation: final activation function. One of [`Sigmoid`,
-                `LeakyReLU`, None].
-            hidden_activation: hidden activation functions. One of [`ReLU`,
-                `LeakyReLU`, `GELU`].
-            use_batch_norm: whether to apply batch normalization.
-            learning_rate: learning rate.
-        """
-        super().__init__()
-        self.save_hyperparameters()
-        self.model = MLP(
-            in_dim=self.hparams.in_dim,
-            out_dim=self.hparams.out_dim,
-            hidden_dims=self.hparams.hidden_dims,
-            dropout=self.hparams.dropout,
-            final_activation=self.hparams.final_activation,
-            hidden_activation=self.hparams.hidden_activation,
-            use_batch_norm=self.hparams.use_batch_norm
-        )
-        self.loss = nn.MSELoss()
-
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass through the MLP model.
+        Esimates the Wasserstein distance between a sample of true reference
+        designs and generated designs.
         Input:
-            X: input tensor of shape Bx(in_dim), where B is the batch size.
+            Xp: a batch of true reference designs of shape ND, where N is the
+                number of reference designs and D is the number of design
+                dimensions.
+            Xq: a batch of generated designs of shape MD, where M is the number
+                of generated designs.
         Returns:
-            Output tensor of shape Bx(out_dim), where B is the batch size.
+            The estimated 1-Wasserstein distance.
         """
-        return self.model(X)
-
-    def training_step(
-        self, batch: Tuple[torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        X, y = batch
-        train_loss = self.loss(self.model(X), y)
-        self.log("train_loss", train_loss)
-        return train_loss
-
-    def validation_step(
-        self, batch: Tuple[torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
-        X, y = batch
-        val_loss = self.loss(self.model(X), y)
-        self.log("val_loss", val_loss)
-        return val_loss
-
-    def configure_optimizers(self) -> optim.Optimizer:
-        return optim.Adam(self.model.parameters(), lr=self.hparams.lr)
+        param = next(self.parameters())
+        return self(Xp.to(param)).mean() - self(Xq.to(param)).mean()

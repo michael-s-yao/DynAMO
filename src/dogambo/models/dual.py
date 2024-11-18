@@ -10,42 +10,45 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 import numpy as np
 import torch
 import torch.nn as nn
+from typing import Final, Optional
 
 
 class ExplicitDual(nn.Module):
     def __init__(
         self,
-        beta: float,
         Xp: torch.Tensor,
         ptau: torch.Tensor,
         critic: nn.Module,
-        W0: float,
-        batch_size: int,
-        seed: int = 0,
+        batch_size: int = 1024,
+        dual_step_size: float = 0.001,
+        W0: float = 0.0,
+        seed: Optional[int] = 0,
         **kwargs
     ):
         """
         Args:
-            beta: the relative importance of the KL divergence- based reward.
             Xp: the offline reference dataset with shape ND, where N is the
                 number of reference designs and D is the number of design
                 dimensions.
             ptau: the relative weighting of each design with shape N.
             critic: the fitted source critic function.
-            W0: the 1-Wasserstein distance threshold hyperparameter.
             batch_size: the number of datums to use to approximate the
-                reference distribution empirically.
+                reference distribution empirically. Default 1024.
+            dual_step_size: the step size for dual variable optimization.
+            W0: the 1-Wasserstein distance threshold hyperparameter.
+                Default 0.0.
             seed: random seed. Default 0.
         """
         super().__init__()
-        self._beta = beta
         self._Xp = Xp
         self._ptau = ptau
-        self._critic = critic
-        self._W0 = W0
-        self._batch_size = batch_size
-        self._seed = seed
+        self.critic = critic.to(Xp)
+        self._W0: Final[float] = W0
+        self._batch_size: Final[int] = batch_size
+        self._dual_step_size: Final[float] = dual_step_size
+        self._seed: Final[Optional[int]] = seed
         self._rng = np.random.default_rng(seed=self._seed)
+        self._lambd = torch.ones(1).to(next(self.critic.parameters()))
 
         for key, val in kwargs.items():
             setattr(self, key, val)
@@ -65,11 +68,8 @@ class ExplicitDual(nn.Module):
         xp, ptau = self._Xp[idxs], self._ptau[idxs]
         ptau = ptau / ptau.sum()
 
-        t1 = self._beta * (ptau * self.fs_star(lambd * self._critic(xp))).sum()
-        t2 = ((ptau - 1.0) * self.fs_star(lambd * self._critic(xp))).sum()
-        t3 = self._beta * lambd * (ptau * self._critic(xp)).sum()
-        t4 = -self._beta * lambd * self._W0
-        return t1 + t2 + t3 + t4
+        g = -1.0 * (ptau * self.fs_star(lambd * self.critic(xp))).sum(dim=0)
+        return g + (lambd * ((ptau * self.critic(xp)).sum(dim=0) - self._W0))
 
     @staticmethod
     def fs_star(v: torch.Tensor) -> torch.Tensor:
@@ -81,3 +81,62 @@ class ExplicitDual(nn.Module):
             The Fenchel conjugate of fs(u) evaluated at the point(s) v.
         """
         return torch.exp(v - 1.0)
+
+    @property
+    def lambd(self) -> torch.Tensor:
+        """
+        Computes the optimal value of the Lagrange multiplier lambda.
+        Input:
+            None.
+        Returns:
+            The optimal value of the Lagrange multiplier lambda.
+        """
+        self._lambd = self._lambd.requires_grad_(True)
+        lambd_optimizer = torch.optim.Adam(
+            [self._lambd], lr=self._dual_step_size, maximize=True
+        )
+        dl = -np.inf * torch.ones(1)
+        while not torch.isclose(
+            torch.abs(dl), torch.zeros_like(dl), atol=1e-4
+        ):
+            lambd_optimizer.zero_grad()
+            self(self._lambd).backward(retain_graph=True)
+            dl = self._lambd.grad
+            lambd_optimizer.step()
+        self._lambd = self._lambd.detach()
+        return self._lambd.clone()
+
+    def fit(
+        self,
+        Xp: torch.Tensor,
+        Xq: torch.Tensor,
+        qpi: Optional[np.ndarray] = None,
+        lr: float = 0.001,
+        batch_size: int = 128,
+        patience: int = 100
+    ) -> None:
+        """
+        Fits the Lipschitz-constrained source critic model.
+        Input:
+            Xp: a dataset of real reference designs of shape ND, where N is
+                the number of designs and D the number of design dimensions.
+            Xq: a dataset of generated designs of shape MD, where M is the
+                number of designs and D the number of design dimensions.
+            qpi: an optional array of shape N specifying the sampling
+                probability over the generated designs.
+            lr: learning rate. Default 0.001.
+            batch_size: batch size. Default 128.
+            patience: patience. Default 100.
+        Returns:
+            None.
+        """
+        self.critic.fit(
+            Xp=Xp,
+            Xq=Xq,
+            p_sampling_prob=self._ptau.detach().cpu().numpy(),
+            q_sampling_prob=qpi,
+            lr=lr,
+            batch_size=batch_size,
+            rng=self._rng,
+            patience=patience
+        )
