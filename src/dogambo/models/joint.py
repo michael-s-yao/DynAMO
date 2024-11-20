@@ -51,7 +51,9 @@ class EncDecPropModule(pl.LightningModule):
 
         if self.task.is_discrete:
             self.vae = InfoTransformerVAE(
-                self.task.num_classes, **self.vae_kwargs
+                self.task.num_classes,
+                max_string_length=self.task.input_size,
+                **self.vae_kwargs
             )
             self.recon_loss = nn.CrossEntropyLoss()
             self.kld_loss = KLDivergence()

@@ -228,12 +228,7 @@ class LipschitzMLP(MLP):
         ) as pbar:
             for _ in pbar:
                 optimizer.zero_grad()
-                pi = rng.choice(
-                    Xp.size(dim=0),
-                    min(Xp.size(dim=0), batch_size),
-                    replace=False,
-                    p=p_sampling_prob
-                )
+                pi = rng.choice(Xp.size(dim=0), batch_size, p=p_sampling_prob)
                 qi = rng.choice(
                     Xq.size(dim=0),
                     min(Xq.size(dim=0), batch_size),

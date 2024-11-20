@@ -12,8 +12,9 @@ import design_bench
 import numpy as np
 import os
 import torch
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import ContextManager, Dict, Callable, Optional, Union
 
 
 def p_tau_ref(y: torch.Tensor, tau: float) -> torch.Tensor:
@@ -87,3 +88,30 @@ def get_model_ckpt(
     if len(files) == 0:
         return None
     return files[0][0]
+
+
+def import_flash_attn() -> Dict[str, Union[str, ContextManager]]:
+    """
+    Attempts to import and use FlashAttention for LLM model inference.
+    Input:
+        None.
+    Returns:
+        A dictionary containing the following key-value pairs:
+            attn_implementation: the attention implementation to use.
+            autocast_context: the corresponding autocast context manager.
+    Citation(s):
+        [1] Dao T, Fu DY, Ermon S, Rudra A, Re C. FlashAttention: Fast and
+            memory-efficient exact attention with IO-awarness. arxiv Preprint.
+            (2023). doi: 10.48550/arXiv.2205.14135
+    """
+    try:
+        import flash_attn  # noqa
+        assert torch.cuda.is_available()
+        return {
+            "attn_implementation": "flash_attention_2",
+            "autocast_context": torch.autocast("cuda", torch.bfloat16)
+        }
+    except ImportError:
+        return {
+            "attn_implementation": "eager", "autocast_context": nullcontext()
+        }

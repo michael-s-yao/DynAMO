@@ -19,6 +19,7 @@ Citation(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -363,7 +364,7 @@ class InfoTransformerVAE(nn.Module):
 
         tokens = torch.full(
             (n, 1),
-            fill_value=self.num_classes,
+            fill_value=self.start,
             dtype=torch.long,
             device=z.device
         )
@@ -382,6 +383,7 @@ class InfoTransformerVAE(nn.Module):
             sample, randoms = self.gumbel_softmax(
                 logits, dim=-1, hard=True, return_randoms=True
             )
+            sample[-1, :, self.start] = -np.inf
 
             tokens = torch.cat(
                 [tokens, sample[-1, :, :].argmax(dim=-1).unsqueeze(dim=-1)],

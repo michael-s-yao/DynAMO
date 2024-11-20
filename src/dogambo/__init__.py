@@ -7,11 +7,8 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-import collections
 import numpy as np
-import pickle
 import torch
-from gym.envs import registration as gym_reg
 
 
 def override_deprecations() -> None:
@@ -23,6 +20,10 @@ def override_deprecations() -> None:
     Returns:
         None.
     """
+    import collections
+    import pickle
+    from gym.envs import registration as gym_reg
+
     setattr(np, "bool", bool)
     setattr(np, "loads", pickle.loads)
     setattr(
@@ -47,7 +48,6 @@ def override_deprecations() -> None:
 
     for attr in collections.abc.__all__:
         setattr(collections, attr, getattr(collections.abc, attr))
-    return
 
 
 override_deprecations()
@@ -56,7 +56,7 @@ override_deprecations()
 torch.set_default_dtype(torch.float64)
 
 
-from . import data, models, metrics, utils, optim  # noqa
+from . import data, embed, models, metrics, utils, optim  # noqa
 
 
-__all__ = ["data", "models", "metrics", "utils", "optim"]
+__all__ = ["data", "embed", "models", "metrics", "utils", "optim"]

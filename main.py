@@ -9,9 +9,9 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import click
 import design_bench
-import logging
 import numpy as np
 import pytorch_lightning as pl
+import sys
 import torch
 import yaml
 from botorch.utils.transforms import unnormalize
@@ -128,6 +128,8 @@ def main(
     rng = np.random.default_rng(seed)
 
     task, task_name = design_bench.make(task), task
+    if not task.is_discrete:
+        task.map_normalize_x()
 
     dm = dogambo.data.DesignBenchDataModule(
         task, batch_size=batch_size, seed=seed
@@ -155,22 +157,11 @@ def main(
     xp = torch.cat(xp).flatten(start_dim=1).to(device)
     y = torch.cat([batch.y for batch in dm.train_dataloader()]).to(device)
 
-    if sobol_init:
-        sobol = torch.quasirandom.SobolEngine(
-            dimension=xp.size(dim=-1), scramble=True, seed=seed
-        )
-        xq = unnormalize(sobol.draw(batch_size), bounds)
-    else:
-        best_idxs = np.argsort(y.squeeze())[-batch_size:]
-        rng.shuffle(best_idxs)
-        xq = xp[best_idxs]
-
     ptau_ref = dogambo.utils.p_tau_ref(y, tau=tau)
 
     if torch.cuda.is_available():
-        xp, xq, bounds = xp.cuda(), xq.cuda(), bounds.cuda()
-    xp, xq, bounds = xp.double(), xq.double(), bounds.double()
-    qtt = np.ones(xq.size(dim=0), dtype=np.float32)
+        xp, bounds = xp.cuda(), bounds.cuda()
+    xp, bounds = xp.double(), bounds.double()
 
     g = dogambo.models.ExplicitDual(
         Xp=xp,
@@ -180,7 +171,6 @@ def main(
         dual_step_size=dual_step_size,
         seed=seed
     )
-    g.fit(xp, xq, qtt)
 
     policy = dogambo.optim.qEIPolicy(
         batch_size=batch_size,
@@ -196,34 +186,54 @@ def main(
         savedir,
         num_restarts=num_restarts,
         patience=patience,
-        logger=logging.getLogger(__name__)
+        logger=dogambo.metrics.get_logger(),
+        seed=seed
     )
-    Ecp = g.critic(xp).mean() - w0
-    yq = surrogate(xq).detach()
-    yq -= (beta / tau) * kld(
-        xq.mean() - xp.mean(), torch.log(xq.std().square() + xp.std().square())
-    )
-    yq -= (beta * g.lambd * (Ecp - g.critic(xq)))
-    state.log(xq.detach(), yq.detach())
+
+    qtt = None
+    if sobol_init:
+        sobol = torch.quasirandom.SobolEngine(
+            dimension=xp.size(dim=-1), scramble=True, seed=seed
+        )
 
     while not state.has_converged:
-        g.fit(xp, state.designs, qtt)
-        policy.fit(state.designs, state.predictions, seed=seed)
-        new_xq = policy()
+        if state.designs is None and sobol_init:
+            new_xq = unnormalize(sobol.draw(batch_size).to(bounds), bounds)
+            qtt = None
+        elif state.designs is None:
+            best_idxs = np.argsort(y.squeeze())[-batch_size:]
+            rng.shuffle(best_idxs)
+            new_xq = xp[best_idxs]
+            qtt = None
+        else:
+            new_xq = policy()
+
         new_yq = surrogate(new_xq).detach()
         new_yq -= (beta / tau) * kld(
             new_xq.mean() - xp.mean(),
             torch.log(new_xq.std().square() + xp.std().square())
         )
-        new_yq -= (beta * g.lambd * (Ecp - g.critic(xq)))
-        new_qt = np.ones(new_yq.size(dim=0)) * qtt[0] * np.exp(-gamma)
+        new_yq -= (
+            beta * g.lambd * (g.critic(xp).mean() - g.critic(new_xq) - w0)
+        )
+
+        new_qt = np.ones(new_yq.size(dim=0))
+        if qtt is None:
+            qtt = new_qt
+        else:
+            qtt = np.concatenate((new_qt * qtt[0] * np.exp(-gamma), qtt))
 
         state.log(new_xq.detach(), new_yq.detach())
-        qtt = np.concatenate((new_qt, qtt))
+
+        if state.designs is None:
+            continue
+        g.fit(xp, state.designs, qtt)
+        policy.fit(state.designs, state.predictions, seed=seed)
+
         if fast_dev_run:
             return
 
-    state.save()
+    state.save(cli=sys.argv)
 
 
 if __name__ == "__main__":
