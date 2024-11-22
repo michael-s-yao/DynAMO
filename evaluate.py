@@ -192,7 +192,14 @@ def main(
     me_mean = me_int[0] + ((me_int[-1] - me_int[0]) / 2.0)
     click.echo(f"Median Score: {me_mean} [{me_int[0]} - {me_int[-1]}]")
 
-    if task_name in ["TFBind8-Exact-v0", "TFBind10-Exact-v0"]:
+    mu_int = sms.DescrStatsW(
+        np.concatenate([r.best_scores(oracle_budget) for r in results])
+    )
+    mu_int = mu_int.tconfint_mean()
+    mu_mean = mu_int[0] + ((mu_int[-1] - mu_int[0]) / 2.0)
+    click.echo(f"All Scores: {mu_mean} [{mu_int[0]} - {mu_int[-1]}]")
+
+    if task_name in ["TFBind8-Exact-v0", "TFBind10-Exact-v0", "UTR-ResNet-v0"]:
         embedder = dogambo.embed.DNABERT()
     elif task_name in ["GFP-Transformer-v0"]:
         embedder = dogambo.embed.ESM2()

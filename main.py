@@ -13,6 +13,7 @@ import numpy as np
 import pytorch_lightning as pl
 import sys
 import torch
+import torch.nn.functional as F
 import yaml
 from botorch.utils.transforms import unnormalize
 from pathlib import Path
@@ -209,12 +210,12 @@ def main(
             new_xq = policy()
 
         new_yq = surrogate(new_xq).detach()
-        new_yq -= (beta / tau) * kld(
+        new_yq -= (beta / (tau + np.finfo(np.float32).eps)) * kld(
             new_xq.mean() - xp.mean(),
             torch.log(new_xq.std().square() + xp.std().square())
         )
-        new_yq -= (
-            beta * g.lambd * (g.critic(xp).mean() - g.critic(new_xq) - w0)
+        new_yq -= beta * g.lambd * F.relu(
+            g.critic(xp).mean() - g.critic(new_xq) - w0
         )
 
         new_qt = np.ones(new_yq.size(dim=0))
