@@ -11,6 +11,8 @@ from .dual import ExplicitDual
 from .mlp import MLP, LipschitzMLP
 from .vae import InfoTransformerVAE
 from .joint import EncDecPropModule
+from .difflm import DiffusionLM
+from .llm import StoryGenerationOracle
 
 
 __all__ = [
@@ -18,5 +20,7 @@ __all__ = [
     "MLP",
     "LipschitzMLP",
     "InfoTransformerVAE",
-    "EncDecPropModule"
+    "EncDecPropModule",
+    "DiffusionLM",
+    "StoryGenerationOracle"
 ]

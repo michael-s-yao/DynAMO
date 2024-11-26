@@ -28,6 +28,12 @@ unzip design_bench_data.zip -d design_bench_data
 rm design_bench_data.zip
 cd $cmd
 
+# Download story generation oracle dependency.
+git submodule update --init --recursive
+gdown 1HIuE8iqYWQ2t01bTJJnxNN1QV-TcCqbx
+unzip saved_latent_models.zip -d latent-diffusion-for-language/
+rm saved_latent_models.zip
+
 # Train the surrogate and VAE models.
 python surrogate.py -t TFBind8-Exact-v0
 python surrogate.py -t TFBind10-Exact-v0

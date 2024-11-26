@@ -9,6 +9,12 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 from .critic import SourceCriticDataset
 from .db import DesignBenchBatch, DesignBenchDataModule
+from .stories import StoryGenerationDataset
 
 
-__all__ = ["SourceCriticDataset", "DesignBenchBatch", "DesignBenchDataModule"]
+__all__ = [
+    "SourceCriticDataset",
+    "DesignBenchBatch",
+    "DesignBenchDataModule",
+    "StoryGenerationDataset"
+]

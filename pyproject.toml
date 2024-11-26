@@ -26,6 +26,7 @@ classifiers = [
 ]
 dependencies = [
   "einops",
+  "mauve-text",
   "botorch",
   "keras<2.11",
   "design-bench[all]",
@@ -37,7 +38,8 @@ dependencies = [
   "morphing-agents",
   "Cython<3",
   "transforms3d",
-  "scikit-learn<1"
+  "scikit-learn<1",
+  "jsonlines"
 ]
 
 [project.optional-dependencies]

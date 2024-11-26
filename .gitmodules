@@ -1,0 +1,3 @@
+[submodule "latent-diffusion-for-language"]
+	path = latent-diffusion-for-language
+	url = https://github.com/justinlovelace/latent-diffusion-for-language.git

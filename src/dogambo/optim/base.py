@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Implements the Multi-Fidelity Bayesian Optimization (MFBO) policy base class.
+Base generative policy class.
 
 Author(s):
     Michael Yao @michael-s-yao
@@ -10,39 +10,43 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 import abc
 import numpy as np
 import torch
+import torch.nn as nn
+from typing import Optional
 
 
-class BaseGenerativePolicy(abc.ABC):
+class BaseGenerativePolicy(abc.ABC, nn.Module):
     """Base generative policy class."""
 
     def __init__(
         self,
         batch_size: int,
-        ndim: int,
-        sampling_bounds: torch.Tensor,
-        seed: int = 0
+        sampling_bounds: Optional[torch.Tensor] = None,
+        seed: int = 0,
+        **kwargs
     ):
         """
         Args:
-            batch_size: batch size to use for Bayesian sampling per iteration.
-            ndim: number of input design dimensions to optimize over (excluding
-                the fidelity dimension).
-            bounds: the sampling bounds of shape 2D, where D is the number of
-                design dimensions.
+            batch_size: batch size to use for sampling per iteration.
+            sampling_bounds: the (optional) sampling bounds of shape 2D, where
+                D is the number of design dimensions.
             seed: random seed. Default 0.
         """
+        super().__init__()
         self.batch_size = batch_size
-        self.ndim = ndim
-        self.sampling_bounds = sampling_bounds.double()
-        if torch.cuda.is_available():
-            self.sampling_bounds = self.sampling_bounds.cuda()
-        self.normalized_bounds = torch.zeros_like(self.sampling_bounds)
-        self.normalized_bounds[-1] = 1.0
+        if self.sampling_bounds:
+            self.sampling_bounds = sampling_bounds.double()
+            if torch.cuda.is_available():
+                self.sampling_bounds = self.sampling_bounds.cuda()
+            self.normalized_bounds = torch.zeros_like(self.sampling_bounds)
+            self.normalized_bounds[-1] = 1.0
         self.seed = seed
         self._rng = np.random.RandomState(seed=self.seed)
 
+        for key, val in kwargs.items():
+            setattr(self, key, val)
+
     @abc.abstractmethod
-    def __call__(self, *args, **kwargs) -> torch.Tensor:
+    def forward(self, *args, **kwargs) -> torch.Tensor:
         """
         Returns a new batch of candidates to evaluate.
         Input:
@@ -63,6 +67,6 @@ class BaseGenerativePolicy(abc.ABC):
             y: a tensor of shape N1 of all objective evaluations, where N is
                 the number of designs.
         Returns:
-            The optimized acquisition function.
+            None.
         """
         raise NotImplementedError

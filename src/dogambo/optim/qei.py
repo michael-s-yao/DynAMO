@@ -12,7 +12,6 @@ Citation(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-from __future__ import annotations
 import torch
 from botorch import fit_gpytorch_mll
 from botorch.acquisition import qExpectedImprovement
@@ -32,19 +31,17 @@ class qEIPolicy(BaseGenerativePolicy):
     def __init__(
         self,
         batch_size: int,
-        ndim: int,
         sampling_bounds: torch.Tensor,
         seed: int = 0,
         num_restarts: int = 10,
-        raw_samples: int = 512
+        raw_samples: int = 512,
+        **kwargs
     ):
         """
         Args:
             batch_size: batch size to use for Bayesian sampling per iteration.
-            ndim: number of input design dimensions to optimize over (excluding
-                the fidelity dimension).
-            bounds: the sampling bounds of shape 2D, where D is the number of
-                design dimensions.
+            sampling_bounds: the sampling bounds of shape 2D, where D is the
+                number of design dimensions.
             seed: random seed. Default 0.
             num_restarts: the number of starting points for multistart
                 acquisition function optimization. Default 10.
@@ -52,30 +49,27 @@ class qEIPolicy(BaseGenerativePolicy):
         """
         super().__init__(
             batch_size=batch_size,
-            ndim=ndim,
             sampling_bounds=sampling_bounds,
-            seed=seed
+            seed=seed,
+            **kwargs
         )
         self.num_restarts = num_restarts
         self.raw_samples = raw_samples
 
-    def __call__(
+    def forward(
         self,
-        options: Optional[Dict[str, Any]] = {"batch_limit": 5, "maxiter": 200}
+        options: Optional[Dict[str, Any]] = {"batch_limit": 5, "maxiter": 200},
+        **kwargs
     ) -> torch.Tensor:
         """
         Optimizes the quasi-Expected Improvement (qEI) acquisition function and
         returns a new batch of candidates to evaluate.
         Input:
-            acqf: an optional qEI acquisition function to sample against. By
-                default, uses the stored fitted acquisition function from the
-                most recent call to the `fit()` function.
             options: optional keyword arguments for the acquisition function
                 optimization call.
         Returns:
-            A batch of candidates to evaluate of shape Bx(D+1), where B is the
-            batch size and D + 1 is the number of design dimensions including
-            the fidelity dimension.
+            A batch of candidates to evaluate of shape BD, where B is the batch
+            size and D is the number of design dimensions.
         """
         candidates, _ = optimize_acqf(
             acq_function=self.acqf,
