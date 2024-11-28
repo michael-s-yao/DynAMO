@@ -7,17 +7,14 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-import jsonlines
 import numpy as np
-import os
 import torch
 from design_bench.oracles.exact_oracle import ExactOracle
-from mauve import compute_mauve
-from mauve.utils import featurize_tokens_from_model
+from textstat import flesch_reading_ease
 from transformers import pipeline
-from typing import Final, Optional, Set, Union
+from typing import Set, Union
 
-from .difflm import DiffusionLM, DIFFUSIONLM_PATH
+from ..models.difflm import DiffusionLM
 from ..data.stories import StoryGenerationDataset
 
 
@@ -26,24 +23,16 @@ class StoryGenerationOracle(ExactOracle):
 
     difflm_hf_repo_name: str = "michaelsyao/DiffusionLM-ROCStories"
 
-    stories_dataset_path: str = os.path.join(
-        DIFFUSIONLM_PATH, "datasets/ROCstory/roc_valid.json"
-    )
+    name: str = "flesch_reading_ease_score"
 
-    name: str = "mauve_score"
+    max_new_tokens: int = 64
 
-    def __init__(
-        self,
-        dataset: StoryGenerationDataset,
-        num_reference: int = 64,
-        seed: Optional[int] = 0,
-        **kwargs
-    ):
+    num_samples: int = 128
+
+    def __init__(self, dataset: StoryGenerationDataset, **kwargs):
         """
         Args:
             dataset: the offline dataset for the offline optimization problem.
-            num_reference: number of reference stories to use.
-            seed: random seed. Default 0.
         """
         super().__init__(
             dataset,
@@ -55,36 +44,19 @@ class StoryGenerationOracle(ExactOracle):
             expect_logits=None,
             **kwargs
         )
+        self.device_id = -1 + torch.cuda.is_available()
+
         self.pipe = pipeline(
             "text-generation",
             model=self.llm_hf_repo_name,
-            device=(-1 + torch.cuda.is_available()),
-            dtype=torch.bfloat16
+            device=self.device_id,
+            max_new_tokens=self.max_new_tokens
         )
         self.pipe.tokenizer.pad_token = self.pipe.tokenizer.eos_token
         self.difflm = DiffusionLM.from_pretrained(self.difflm_hf_repo_name)
 
-        self.seed: Final[int] = seed
-        self._rng = np.random.default_rng(self.seed)
-
-        with open(self.stories_dataset_path, "r") as f:
-            with jsonlines.Reader(f) as reader:
-                self.reference_stories = sum(list(reader), [])
-        self.reference_stories = self._rng.choice(
-            self.reference_stories,
-            size=num_reference,
-            replace=(num_reference > len(self.reference_stories))
-        )
-        self.p_features = self.pipe.tokenizer(
-            self.reference_stories.tolist(), padding=True
-        )
-        self.p_features = self.p_features.convert_to_tensors("pt").input_ids
-        self.p_features = featurize_tokens_from_model(
-            self.pipe.model,
-            self.p_features.to(next(self.pipe.model.parameters()).device),
-            batch_size=len(self.p_features),
-            name="reference_stories"
-        )
+        for key, val in kwargs.items():
+            setattr(self, key, val)
 
     @classmethod
     def supported_datasets(cls) -> Set:
@@ -130,7 +102,7 @@ class StoryGenerationOracle(ExactOracle):
 
     def protected_predict(
         self, x: Union[torch.Tensor, np.ndarray]
-    ) -> Union[torch.Tensor, np.ndarray]:
+    ) -> np.ndarray:
         """
         Design scoring function that computes the MAUVE score of a generated
         text output seeded by the input design(s).
@@ -139,21 +111,24 @@ class StoryGenerationOracle(ExactOracle):
         Returns:
             A batch or single ground-truth prediction made by the oracle model.
         """
-        is_np = isinstance(x, np.ndarray)
-        if is_np:
+        if isinstance(x, np.ndarray):
             x = torch.from_numpy(x)
         x = x.to(next(self.difflm.parameters()).device)
-        text_seeds = self.difflm.decode(self.difflm(x))
-        stories = self.pipe(text_seeds)
-        scores = []
-        for story in stories:
-            out = compute_mauve(
-                p_feat=self.p_features,
-                q_text=story,
-                featurize_model_name=self.llm_hf_repo_name
-            )
-            scores.append(out.mauve)
 
-        if is_np:
-            return np.array(scores)
-        return torch.tensor(scores).to(x)
+        scores = []
+        for story in self.difflm.decode(self.difflm(x)):
+            stories = self.pipe(
+                [story],
+                repetition_penalty=2.0,
+                eos_token_id=self.pipe.tokenizer.eos_token_id,
+                pad_token_id=self.pipe.tokenizer.eos_token_id,
+                return_full_text=True,
+                continue_final_message=True,
+                do_sample=False,
+                top_p=None,
+                temperature=None,
+            )
+            stories = [st[0]["generated_text"] for st in stories]
+            scores.append(np.mean([flesch_reading_ease(st) for st in stories]))
+
+        return np.array(scores)

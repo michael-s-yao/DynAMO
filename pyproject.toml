@@ -25,8 +25,9 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
 ]
 dependencies = [
+  "datasets",
   "einops",
-  "mauve-text",
+  "textstat",
   "botorch",
   "keras<2.11",
   "design-bench[all]",

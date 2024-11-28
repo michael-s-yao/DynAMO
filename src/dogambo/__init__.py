@@ -7,6 +7,7 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
+from design_bench.registration import register
 import numpy as np
 import torch
 
@@ -56,7 +57,21 @@ override_deprecations()
 torch.set_default_dtype(torch.float64)
 
 
-from . import data, embed, models, metrics, utils, optim  # noqa
+from . import data, embed, models, metrics, utils, optim, oracle
 
 
-__all__ = ["data", "embed", "models", "metrics", "utils", "optim"]
+__all__ = ["data", "embed", "models", "metrics", "utils", "optim", "oracle"]
+
+
+register(
+    "StoryGen-Exact-v0",
+    "dogambo.data:StoryGenerationDataset",
+    "dogambo.oracle:StoryGenerationOracle",
+    dataset_kwargs={
+        "max_samples": None,
+        "distribution": None,
+        "max_percentile": 100.0,
+        "min_percentile": 0.0
+    },
+    oracle_kwargs={}
+)

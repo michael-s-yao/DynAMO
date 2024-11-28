@@ -12,7 +12,6 @@ from .mlp import MLP, LipschitzMLP
 from .vae import InfoTransformerVAE
 from .joint import EncDecPropModule
 from .difflm import DiffusionLM
-from .llm import StoryGenerationOracle
 
 
 __all__ = [
@@ -21,6 +20,5 @@ __all__ = [
     "LipschitzMLP",
     "InfoTransformerVAE",
     "EncDecPropModule",
-    "DiffusionLM",
-    "StoryGenerationOracle"
+    "DiffusionLM"
 ]
