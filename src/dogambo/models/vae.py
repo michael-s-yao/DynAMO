@@ -77,13 +77,10 @@ class IdentityVAE(nn.Module):
         """
         return self.encoder(inp), torch.zeros_like(inp), torch.zeros_like(inp)
 
-    def decode(
-        self, z: torch.Tensor, inp: torch.Tensor, **kwargs
-    ) -> torch.Tensor:
+    def decode(self, z: torch.Tensor, **kwargs) -> torch.Tensor:
         """
         Input:
             z: input points in the VAE latent space.
-            inp: a tensor of continuous inputs.
         Returns:
             The original input points.
         """

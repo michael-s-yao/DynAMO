@@ -8,7 +8,7 @@ Author(s):
 License under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import numpy as np
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from design_bench.task import Task
 from torch.utils.data import Dataset, DataLoader

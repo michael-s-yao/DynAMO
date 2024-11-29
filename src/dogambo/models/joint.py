@@ -7,7 +7,7 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -73,12 +73,11 @@ class EncDecPropModule(pl.LightningModule):
         Returns:
             A dictionary with the final and intermediate model outputs.
         """
-        x = x.to(device=next(self.vae.parameters()).device)
-        if not self.task.is_discrete:
-            return {"x": x, "y": self.surrogate(x)}
         z, mu, logvar = self.vae.encode(x)
         logits = self.vae.decode(z, tokens=x)
-        z = z.reshape(-1, self.vae.latent_size)
+        z = z.reshape(-1, self.vae.latent_size).to(
+            next(self.surrogate.parameters()).dtype
+        )
         ypred = self.surrogate(z)
         return {
             "x": x,
@@ -141,13 +140,6 @@ class EncDecPropModule(pl.LightningModule):
         batch_size = batch.y.size(dim=0)
         out = self(batch.x)
         mse_loss = self.surrogate_loss(out["y"], batch.y)
-        self.log(
-            "mse_loss",
-            mse_loss,
-            prog_bar=True,
-            sync_dist=True,
-            batch_size=batch_size
-        )
         if not self.task.is_discrete:
             self.log(
                 "val_loss",
@@ -156,6 +148,13 @@ class EncDecPropModule(pl.LightningModule):
                 batch_size=batch_size
             )
             return {"mse_loss": mse_loss, "val_loss": mse_loss}
+        self.log(
+            "mse_loss",
+            mse_loss,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=batch_size
+        )
         recon_loss = self.recon_loss(
             out["logits"].reshape(-1, out["logits"].size(dim=-1)),
             batch.x.flatten()
@@ -217,7 +216,7 @@ class EncDecPropModule(pl.LightningModule):
             "recon_loss": recon_loss,
             "kld_loss": kld_loss,
             "vae_loss": vae_loss,
-            "val_loss": vae_loss + (self.beta * mse_loss)
+            "test_loss": vae_loss + (self.beta * mse_loss)
         }
 
     def configure_optimizers(self) -> optim.Optimizer:

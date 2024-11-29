@@ -10,7 +10,7 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 import click
 import design_bench
 import dogambo
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from typing import Optional
 
 
