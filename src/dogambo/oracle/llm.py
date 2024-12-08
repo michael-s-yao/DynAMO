@@ -114,6 +114,7 @@ class StoryGenerationOracle(ExactOracle):
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x)
         x = x.to(next(self.difflm.parameters()).device)
+        x = x.reshape(-1, *self.external_dataset.oracle_input_shape)
 
         scores = []
         for story in self.difflm.decode(self.difflm(x)):

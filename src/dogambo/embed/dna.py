@@ -19,6 +19,8 @@ from transformers import AutoTokenizer, AutoModel
 from transformers.models.bert.configuration_bert import BertConfig
 from typing import Final
 
+from ..utils import import_flash_attn
+
 
 class DNABERT(nn.Module):
     hf_repo_name: Final[str] = "zhihan1996/DNABERT-2-117M"
@@ -36,10 +38,18 @@ class DNABERT(nn.Module):
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.hf_repo_name, trust_remote_code=self.trust_remote_code
         )
+
+        self.dtype = torch.float16
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            self.dtype = torch.bfloat16
+        attn_and_autocast = import_flash_attn()
+        self.autocast_context = attn_and_autocast["autocast_context"]
+
         self.model = AutoModel.from_pretrained(
             self.hf_repo_name,
             trust_remote_code=self.trust_remote_code,
-            config=self.config
+            config=self.config,
+            torch_dtype=self.dtype
         )
         if torch.cuda.is_available():
             self.model = self.model.cuda()
@@ -57,8 +67,13 @@ class DNABERT(nn.Module):
         dna = dna.detach().cpu().numpy()
         dna = np.vectorize(idx_to_char)(dna)
         embeddings = []
-        for seq in ["".join([bp for bp in seq]) for seq in dna]:
-            inputs = self.tokenizer(seq, return_tensors="pt")["input_ids"]
-            inputs = inputs.to(next(self.model.parameters()).device)
-            embeddings.append(torch.mean(self.model(inputs)[0][0], dim=0))
+        with torch.inference_mode():
+            with self.autocast_context:
+                for seq in ["".join([bp for bp in seq]) for seq in dna]:
+                    inputs = self.tokenizer(seq, return_tensors="pt")
+                    inputs = inputs["input_ids"]
+                    inputs = inputs.to(next(self.model.parameters()).device)
+                    embeddings.append(
+                        torch.mean(self.model(inputs)[0][0], dim=0)
+                    )
         return torch.stack(embeddings)

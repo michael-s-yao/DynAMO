@@ -13,7 +13,6 @@ import numpy as np
 import pytorch_lightning as pl
 import sys
 import torch
-import torch.nn.functional as F
 import yaml
 from botorch.utils.transforms import unnormalize
 from pathlib import Path
@@ -31,6 +30,20 @@ import dogambo
         task.task_name for task in design_bench.registry.all()
     ]),
     help="Offline optimization task."
+)
+@click.option(
+    "--optimizer",
+    "-o",
+    required=True,
+    type=click.Choice(dogambo.optim.get_optimizers()),
+    help="Backbone optimizer."
+)
+@click.option(
+    "--transform",
+    "-f",
+    required=True,
+    type=click.Choice(dogambo.core.get_transforms()),
+    help="Forward surrogate model transform."
 )
 @click.option(
     "--batch-size",
@@ -94,7 +107,17 @@ import dogambo
     help="Proposed sample weighting over time."
 )
 @click.option(
+    "--eta",
+    type=float,
+    default=0.01,
+    show_default=True,
+    help="Step size for first-order optimization methods."
+)
+@click.option(
     "--seed", type=int, default=0, show_default=True, help="Random seed."
+)
+@click.option(
+    "--device", type=str, default="auto", show_default=True, help="Device."
 )
 @click.option(
     "--savedir",
@@ -110,6 +133,8 @@ import dogambo
 )
 def main(
     task: str,
+    optimizer: str,
+    transform: str,
     bounds_fn: Union[Path, str] = "bounds.yaml",
     batch_size: int = 64,
     sobol_init: bool = True,
@@ -120,7 +145,9 @@ def main(
     beta: float = 1.0,
     tau: float = 1.0,
     gamma: float = 1.0,
+    eta: float = 0.01,
     seed: int = 0,
+    device: str = "auto",
     savedir: Union[Path, str] = "results",
     fast_dev_run: bool = False
 ):
@@ -142,7 +169,6 @@ def main(
         dogambo.utils.get_model_ckpt(task_name), task=task
     )
     vae, surrogate = model.vae, model.surrogate
-    kld = dogambo.metrics.KLDivergence()
     device = next(model.parameters()).device
 
     with open(bounds_fn) as f:
@@ -153,31 +179,36 @@ def main(
 
     xp = [
         vae.encode(batch.x.to(device))[1].detach().cpu()
-        for batch in dm.train_dataloader()
+        for batch in dm.val_dataloader()
     ]
     xp = torch.cat(xp).flatten(start_dim=1).to(device)
-    y = torch.cat([batch.y for batch in dm.train_dataloader()]).to(device)
+    y = torch.cat([batch.y for batch in dm.val_dataloader()]).to(device)
 
-    ptau_ref = dogambo.utils.p_tau_ref(y, tau=tau)
-
-    if torch.cuda.is_available():
+    if device == "auto" and torch.cuda.is_available():
         xp, bounds = xp.cuda(), bounds.cuda()
+    else:
+        device = torch.device(device)
+        xp, bounds = xp.to(device), bounds.to(device)
     xp, bounds = xp.double(), bounds.double()
 
-    g = dogambo.models.ExplicitDual(
-        Xp=xp,
-        ptau=ptau_ref,
-        critic=dogambo.models.LipschitzMLP(xp.size(dim=-1), 1, [512, 512]),
+    forward_model = getattr(dogambo.core, transform)(
+        surrogate,
+        xp=xp,
+        yp=y,
+        beta=beta,
+        tau=tau,
         W0=w0,
         dual_step_size=dual_step_size,
         seed=seed
     )
 
-    policy = dogambo.optim.qEIPolicy(
+    policy = getattr(dogambo.optim, optimizer)(
         batch_size=batch_size,
         ndim=xp.size(dim=-1),
         sampling_bounds=bounds,
-        seed=seed
+        seed=seed,
+        eta=eta,
+        device=device
     )
 
     state = dogambo.optim.OptimizerState(
@@ -207,28 +238,20 @@ def main(
             new_xq = xp[best_idxs]
             qtt = None
         else:
-            new_xq = policy()
+            new_xq = policy(func=forward_model).to(device)
 
-        new_yq = surrogate(new_xq).detach()
-        new_yq -= (beta / (tau + np.finfo(np.float32).eps)) * kld(
-            new_xq.mean() - xp.mean(),
-            torch.log(new_xq.std().square() + xp.std().square())
-        )
-        new_yq -= beta * g.lambd * F.relu(
-            g.critic(xp).mean() - g.critic(new_xq) - w0
-        )
-
+        new_yq = forward_model(new_xq).detach()
         new_qt = np.ones(new_yq.size(dim=0))
         if qtt is None:
             qtt = new_qt
         else:
             qtt = np.concatenate((new_qt * qtt[0] * np.exp(-gamma), qtt))
 
-        state.log(new_xq.detach(), new_yq.detach())
+        state.log(new_xq.detach().cpu(), new_yq.detach().cpu())
 
         if state.designs is None:
             continue
-        g.fit(xp, state.designs, qtt)
+        forward_model.fit(xp=xp, xq=state.designs.to(device), qpi=qtt)
         policy.fit(state.designs, state.predictions, seed=seed)
 
         if fast_dev_run:

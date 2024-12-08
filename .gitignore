@@ -118,3 +118,5 @@ db-results/
 results/
 *.out
 *.csv
+*.tar.xz
+multicoil_test/

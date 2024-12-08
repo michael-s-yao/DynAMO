@@ -28,6 +28,7 @@ class OptimizerState:
         savedir: Optional[Union[Path, str]] = None,
         num_restarts: int = 2,
         patience: int = 10,
+        max_samples_per_restart: Optional[int] = 2048,
         logger: Optional[logging.Logger] = None,
         seed: Optional[int] = None,
         **kwargs
@@ -40,6 +41,8 @@ class OptimizerState:
             savedir: the directory to save the optimization results to.
             num_restarts: the number of allowed restarts. Default 2.
             patience: patience before restarting. Default 10.
+            max_samples_per_restart: maximum samples per restart.
+                Default 2048.
             logger: an optional logger specification.
             seed: optional random seed. Default None.
         """
@@ -50,6 +53,9 @@ class OptimizerState:
         self.max_restarts: Final[int] = num_restarts
         self.num_restarts = 0
         self.patience: Final[int] = patience
+        self.max_samples_per_restart: Final[Optional[int]] = (
+            max_samples_per_restart
+        )
         self.num_fails = 0
         self.best_yq = -np.inf
         self.logger = logger
@@ -98,7 +104,10 @@ class OptimizerState:
             )
             self.logger.info(f"Number of Samples: {torch.numel(self.curr_yq)}")
 
-        if self.num_fails < self.patience:
+        if (self.num_fails < self.patience) and (
+            self.max_samples_per_restart is None or
+            torch.numel(self.curr_yq) < self.max_samples_per_restart
+        ):
             return
         self.num_fails = 0
         self.num_restarts += 1
@@ -173,10 +182,11 @@ class OptimizerState:
             An array of predictions of shape N1.
         """
         if self.task.is_discrete:
-            xq = self.model.vae.sample(z=xq).detach().cpu().numpy()
+            device = next(self.model.vae.parameters()).device
+            xq = self.model.vae.sample(z=xq.to(device)).detach().cpu().numpy()
             xq = xq[..., 1:]  # Remove start token.
         else:
-            xq = self.task.unnormalize_x(xq.detach().cpu().numpy())
+            xq = self.task.denormalize_x(xq.detach().cpu().numpy())
         y = self.task.predict(xq)
         if y.ndim < 2:
             y = y[..., np.newaxis]

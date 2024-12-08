@@ -127,6 +127,7 @@ class MLP(nn.Module):
         Returns:
             Output tensor of shape Bx(out_dim), where B is the batch size.
         """
+        X = X.flatten(start_dim=1)
         return self.model(X)
 
 

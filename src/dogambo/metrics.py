@@ -84,6 +84,22 @@ def FID(xq: torch.Tensor, xp: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     )
 
 
+def L1_coverage(xq: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the L1 coverage (i.e., sum_D max(xq[i]) - min(xq[i]) / D, where
+    D is the number of dimensions) of a set of generated designs.
+    Input:
+        xq: the batch of generated designs of shape ND, where N is the number
+            of generated designs and D the number of design dimensions.
+    Returns:
+        The L1 coverage of the generated designs.
+    """
+    xq = xq.reshape(xq.size(dim=0), -1)
+    return torch.abs(xq.max(dim=0).values - xq.min(dim=0).values).sum() / (
+        xq.size(dim=-1)
+    )
+
+
 def compute_diversity(
     xq: torch.Tensor, xp: Optional[torch.Tensor] = None, metric: str = ""
 ) -> torch.Tensor:
@@ -101,3 +117,5 @@ def compute_diversity(
     if metric.lower() == "fid":
         assert xp is not None
         return FID(xq, xp)
+    elif metric.lower() == "l1":
+        return L1_coverage(xq)

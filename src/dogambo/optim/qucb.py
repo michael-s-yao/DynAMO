@@ -1,20 +1,20 @@
 #!/usr/bin/python3
 """
-Implements the standard quasi-Expected Improvement (qEI) generative policy.
+Implements the standard quasi-Upper Confidence Bound (qUCB) generative policy.
 
 Author(s):
     Michael Yao @michael-s-yao
 
 Citation(s):
-    [1] Jones DR, Schonlau M, Welch WJ. Efficient global optimization of
-        expensive black-box functions. J Glob Opt 13:455-92. (1998). doi:
-        10.1023/A:1008306431147
+    [1] Wilson JT, Moriconi R, Hutter F, Deisenroth MP. The reparametrization
+        trick for acquisition functions. Proc NeurIPS Bayes Opt Workshop.
+        (2017). doi: 10.48550/arXiv.1712.00424
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import torch
 from botorch import fit_gpytorch_mll
-from botorch.acquisition import qExpectedImprovement
+from botorch.acquisition import qUpperConfidenceBound
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.outcome import Standardize
 from botorch.optim import optimize_acqf
@@ -25,13 +25,14 @@ from typing import Any, Dict, Final, Optional
 from .base import BaseGenerativePolicy
 
 
-class qEIPolicy(BaseGenerativePolicy):
-    """Standard quasi-Expected Improvement (qEI) baseline policy."""
+class qUCBPolicy(BaseGenerativePolicy):
+    """Standard quasi-Upper Confidence Bound (qUCB) baseline policy."""
 
     def __init__(
         self,
         batch_size: int,
         sampling_bounds: torch.Tensor,
+        beta: float = 0.1,
         seed: int = 0,
         num_restarts: int = 10,
         raw_samples: int = 512,
@@ -42,6 +43,8 @@ class qEIPolicy(BaseGenerativePolicy):
             batch_size: batch size to use for Bayesian sampling per iteration.
             sampling_bounds: the sampling bounds of shape 2D, where D is the
                 number of design dimensions.
+            beta: relative tradeoff between mean and standard deviation.
+                Default 0.1.
             seed: random seed. Default 0.
             num_restarts: the number of starting points for multistart
                 acquisition function optimization. Default 10.
@@ -54,6 +57,7 @@ class qEIPolicy(BaseGenerativePolicy):
             seed=seed,
             **kwargs
         )
+        self.beta: Final[float] = beta
         self.num_restarts: Final[int] = num_restarts
         self.raw_samples: Final[int] = raw_samples
 
@@ -104,4 +108,4 @@ class qEIPolicy(BaseGenerativePolicy):
         mll = ExactMarginalLogLikelihood(self.model.likelihood, self.model)
         fit_gpytorch_mll(mll)
 
-        self.acqf = qExpectedImprovement(model=self.model, best_f=y.max())
+        self.acqf = qUpperConfidenceBound(model=self.model, beta=self.beta)

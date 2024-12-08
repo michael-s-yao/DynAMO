@@ -31,5 +31,7 @@ class StoryGenerationDataset(ContinuousDataset):
         x = np.concatenate([
             pickle.loads(design)[np.newaxis] for design in data["designs"]
         ])
+        self.oracle_input_shape = x.shape[1:]
+        x = x.reshape(x.shape[0], -1)
         y = np.array(data["scores"])[..., np.newaxis]
         super().__init__(x, y, **kwargs)

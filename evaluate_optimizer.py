@@ -12,11 +12,10 @@ import click
 import design_bench
 import numpy as np
 import os
-import statsmodels.stats.api as sms
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import Dict, Final, Sequence, Union
+from typing import Dict, Final, Sequence, Optional, Union
 
 
 class ExperimentalResult:
@@ -26,7 +25,9 @@ class ExperimentalResult:
         task: design_bench.task.Task,
         results_fn: Union[Path, str],
         oracle_eval_budget: int,
-        vae: nn.Module
+        vae: nn.Module,
+        ymin: Optional[float] = None,
+        ymax: Optional[float] = None,
     ):
         """
         Args:
@@ -35,23 +36,33 @@ class ExperimentalResult:
             results_fn: the path to the results file.
             oracle_eval_budget: the oracle evaluation budget.
             vae: the trained VAE model.
+            ymin: an optional minimum oracle value to normalize the scores.
+            ymax: an optional maximum oracle value to normalize the scores.
         """
         self.task_name: Final[str] = task_name
         self.task: Final[design_bench.task.Task] = task
         self.results_fn: Final[Union[Path, str]] = results_fn
         self.oracle_eval_budget: Final[int] = oracle_eval_budget
         self.vae: Final[nn.Module] = vae
+        self.ymin: Final[Optional[float]] = ymin
+        self.ymax: Final[Optional[float]] = ymax
 
         self.data: Final[Dict[str, Union[Sequence[str], np.ndarray]]] = (
             np.load(self.results_fn)
         )
 
-        self.designs = torch.from_numpy(self.data["designs"]).to(
-            next(self.vae.parameters())
-        )
-        self.designs: Final[torch.Tensor] = self.designs.reshape(
-            -1, self.vae.bottleneck_size, self.vae.model_dim
-        )
+        self.designs = torch.from_numpy(self.data["designs"])
+        if self.task.is_discrete:
+            self.designs = self.designs.to(
+                next(self.vae.parameters())
+            )
+            self.designs: Final[torch.Tensor] = self.designs.reshape(
+                -1, self.vae.bottleneck_size, self.vae.model_dim
+            )
+        else:
+            self.designs: Final[torch.Tensor] = self.designs.reshape(
+                -1, self.designs.size(dim=-1)
+            )
 
         self.predictions: Final[np.ndarray] = np.squeeze(
             self.data["predictions"], axis=-1
@@ -60,17 +71,8 @@ class ExperimentalResult:
         self.scores: Final[np.ndarray] = np.squeeze(
             self.data["scores"], axis=-1
         )
-        if self.task_name in [
-            "ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0"
-        ]:
-            tmp = design_bench.make(
-                task_name, dataset_kwargs={
-                    "max_percentile": 100.0, "min_percentile": 0.0
-                }
-            )
-            self.scores = (self.scores - tmp.y.min()) / (
-                tmp.y.max() - tmp.y.min()
-            )
+        if self.ymin is not None and self.ymax is not None:
+            self.scores = (self.scores - self.ymin) / (self.ymax - self.ymin)
 
         self.best_idxs = np.argsort(self.predictions.flatten())[
             -self.oracle_eval_budget:
@@ -98,7 +100,9 @@ class ExperimentalResult:
         Returns:
             The observed designs evaluated using the oracle function.
         """
-        return self.vae.sample(z=self.observed_designs)[..., 1:]
+        if self.task.is_discrete:
+            return self.vae.sample(z=self.observed_designs)[..., 1:]
+        return self.observed_designs
 
     @property
     def max_score(self) -> float:
@@ -170,6 +174,11 @@ def main(
     model = dogambo.models.EncDecPropModule.load_from_checkpoint(
         dogambo.utils.get_model_ckpt(task_name), task=task
     )
+    tmp = design_bench.make(
+        task_name, dataset_kwargs={
+            "max_percentile": 100.0, "min_percentile": 0.0
+        }
+    )
 
     results = [
         ExperimentalResult(
@@ -177,47 +186,37 @@ def main(
             task,
             os.path.join(savedir, fn),
             oracle_budget,
-            model.vae
+            model.vae,
+            ymin=tmp.y.min(),
+            ymax=tmp.y.max()
         )
         for fn in filter(
             lambda fn: fn.startswith(task_name), os.listdir(savedir)
         )
     ]
 
-    max_int = sms.DescrStatsW([r.max_score for r in results]).tconfint_mean()
-    max_mean = max_int[0] + ((max_int[-1] - max_int[0]) / 2.0)
-    click.echo(f"Max Score: {max_mean} [{max_int[0]} - {max_int[-1]}]")
-
-    me_int = sms.DescrStatsW([r.median_score for r in results]).tconfint_mean()
-    me_mean = me_int[0] + ((me_int[-1] - me_int[0]) / 2.0)
-    click.echo(f"Median Score: {me_mean} [{me_int[0]} - {me_int[-1]}]")
-
-    mu_int = sms.DescrStatsW(
-        np.concatenate([r.best_scores(oracle_budget) for r in results])
-    )
-    mu_int = mu_int.tconfint_mean()
-    mu_mean = mu_int[0] + ((mu_int[-1] - mu_int[0]) / 2.0)
-    click.echo(f"All Scores: {mu_mean} [{mu_int[0]} - {mu_int[-1]}]")
-
+    click.echo(f"Max Score: {[r.max_score for r in results]}")
+    click.echo(f"Median Score: {[r.median_score for r in results]}")
     if task_name in ["TFBind8-Exact-v0", "TFBind10-Exact-v0", "UTR-ResNet-v0"]:
         embedder = dogambo.embed.DNABERT()
     elif task_name in ["GFP-Transformer-v0"]:
         embedder = dogambo.embed.ESM2()
     elif task_name in [
-        "ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0"
+        "ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0",
+        "PenalizedLogP-Exact-v0"
     ]:
         embedder = dogambo.embed.ChemBERT()
+    else:
+        embedder = nn.Identity()
 
     designs = [embedder(r.best_designs) for r in results]
     reference = embedder(dm.val.x)
     diversity = [
-        dogambo.metrics.compute_diversity(x, reference, metric="fid")
+        dogambo.metrics.compute_diversity(x, reference, metric="l1").item()
         for x in designs
     ]
 
-    div_int = sms.DescrStatsW(diversity).tconfint_mean()
-    div_mean = div_int[0] + ((div_int[-1] - div_int[0]) / 2.0)
-    click.echo(f"Diversity: {div_mean} [{div_int[0]} - {div_int[-1]}]")
+    click.echo(f"Diversity: {diversity}")
 
 
 if __name__ == "__main__":

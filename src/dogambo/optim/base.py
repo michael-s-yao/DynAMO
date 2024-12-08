@@ -33,7 +33,7 @@ class BaseGenerativePolicy(abc.ABC, nn.Module):
         """
         super().__init__()
         self.batch_size = batch_size
-        if self.sampling_bounds:
+        if sampling_bounds is not None:
             self.sampling_bounds = sampling_bounds.double()
             if torch.cuda.is_available():
                 self.sampling_bounds = self.sampling_bounds.cuda()

@@ -1,4 +1,21 @@
 #!/usr/bin/python3
+"""
+Script to construct the StoryGen custom MBO offline dataset.
+
+Author(s):
+    Michael Yao @michael-s-yao
+
+Citation(s):
+    [1] Lovelace J, Kishore V, Wan C, Shekhtman ES, Weinberger KQ. Latent
+        diffusion for language generation. Proc NeurIPS. (2023). URL:
+        https://openreview.net/forum?id=NKdtztladR
+    [2] Mostafazadeh N, Chambers N, He X, Parikh D, Batra D, Vanderwende L,
+        Kohli P, Allen J. A corpus and cloze evaluation for deeper
+        understanding of commonsense stories. Proc NAACL: Human Lang Tech:
+        839-49. (2016). doi: 10.18653/v1/N16-1098
+
+Licensed under the MIT License. Copyright University of Pennsylvania 2024.
+"""
 import numpy as np
 from dogambo.data import StoryGenerationDataset
 from dogambo.models import StoryGenerationOracle, DiffusionLM
@@ -12,6 +29,7 @@ def main(
     batch_size: int = 4,
     savepath: Union[Path, str] = "stories.npz"
 ):
+    """Construct the StoryGen custom MBO offline dataset."""
     oracle = StoryGenerationOracle(StoryGenerationDataset())
     model = DiffusionLM.from_pretrained("michaelsyao/DiffusionLM-ROCStories")
 

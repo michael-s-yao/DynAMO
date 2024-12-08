@@ -27,6 +27,9 @@ classifiers = [
 dependencies = [
   "datasets",
   "einops",
+  "evotorch",
+  "fastmri",
+  "selfies",
   "textstat",
   "botorch",
   "keras<2.11",
@@ -40,7 +43,8 @@ dependencies = [
   "Cython<3",
   "transforms3d",
   "scikit-learn<1",
-  "jsonlines"
+  "jsonlines",
+  "rdkit-pypi"
 ]
 
 [project.optional-dependencies]
@@ -48,3 +52,9 @@ dev = ["flake8", "matplotlib"]
 
 [project.urls]
 "Homepage" = "https://github.com/michael-s-yao/do-gambo"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dogambo = ["*.gz"]
