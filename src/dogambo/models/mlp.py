@@ -119,16 +119,24 @@ class MLP(nn.Module):
                 layers.append(nn.Dropout(p=dropout))
         self.model = nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, flatten: bool = True) -> torch.Tensor:
         """
         Forward pass through the MLP model.
         Input:
             X: input tensor of shape Bx(in_dim), where B is the batch size.
+            flatten: whether to flatten the inputs to the model. Default True.
         Returns:
             Output tensor of shape Bx(out_dim), where B is the batch size.
         """
-        X = X.flatten(start_dim=1)
-        return self.model(X)
+        if flatten:
+            X = X.flatten(start_dim=1)
+        else:
+            shape = X.size()[:-1]
+            X = X.reshape(-1, X.size(dim=-1))
+        y = self.model(X)
+        if not flatten:
+            y = y.reshape(*shape, 1)
+        return y
 
 
 class LipschitzMLP(MLP):
@@ -180,7 +188,8 @@ class LipschitzMLP(MLP):
         lr: float = 0.001,
         batch_size: int = 128,
         rng: Optional[Union[int, np.random.Generator]] = None,
-        patience: int = 100
+        patience: int = 100,
+        **kwargs
     ) -> nn.Module:
         """
         Fits the Lipschitz MLP as a source critic model.
@@ -210,7 +219,7 @@ class LipschitzMLP(MLP):
             p_sampling_prob = p_sampling_prob.squeeze()
         if q_sampling_prob is not None:
             q_sampling_prob = q_sampling_prob.squeeze()
-        q_sampling_prob = q_sampling_prob / np.sum(q_sampling_prob)
+            q_sampling_prob = q_sampling_prob / np.sum(q_sampling_prob)
 
         def generator():
             while not np.isclose(Wd.item(), min(cache), rtol=1e-3) or (

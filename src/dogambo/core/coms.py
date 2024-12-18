@@ -12,10 +12,9 @@ Citation(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-import numpy as np
 import torch
-from copy import deepcopy
-from typing import Final, Optional
+import torch.nn.functional as F
+from typing import Final
 
 from .base import BaseObjectiveTransform
 
@@ -26,71 +25,76 @@ class COMsTransform(BaseObjectiveTransform):
     def __init__(
         self,
         surrogate: torch.Tensor,
-        alpha: float = 1.0,
-        T: int = 5,
-        steps_per_update: int = 20,
-        inner_lr: float = 0.001,
+        alpha: float = 0.1,
+        beta: float = 0.9,
+        eta: float = 0.01,
+        steps_per_update: int = 100,
+        lambd: float = 0.01,
         **kwargs
     ):
         """
         Args:
             surrogate: the original forward surrogate model.
-            alpha: RoMA regularization strength. Default 1.0.
-            T: maximum number of solution updates. Default 5.
+            alpha: a hyperparameter controlling the tradeoff between
+                conservatism and regression. Default 0.1.
+            beta: a hyperparameter controlling the weighted penalty of the
+                hallucinated, lookahead gradient-ascient iterate. Default 0.9.
+            eta: a hyperparameter controlling the step size of the
+                hallucinated, lookahead gradient-ascient iterate. Default 0.01.
             steps_per_update: maximum number of weight steps per update.
-                Default 20.
-            inner_lr: the step size for weight updates. Default 0.001.
+                Default 100.
+            lambd: the step size for weight updates. Default 0.001.
         """
         super().__init__(
             surrogate=surrogate,
             alpha=alpha,
-            T=T,
+            beta=beta,
+            eta=eta,
             steps_per_update=steps_per_update,
-            inner_lr=inner_lr,
+            lambd=lambd,
             **kwargs
         )
 
     def forward(self, xq: torch.Tensor, **kwargs) -> torch.Tensor:
         """
-        Forward pass through the RoMA objective transform.
+        Forward pass through the COMs objective transform.
         Input:
             xq: the input batch of designs to the surrogate model.
         Returns:
             The forward model predictions of the input designs.
         """
-        return self.surrogate(xq)
+        xq = xq.requires_grad_(True)
+        xupdt = xq + (
+            self.eta * torch.autograd.grad(self.surrogate(xq).sum(), xq)[0]
+        )
+        return self.surrogate(xq) - self.beta * self.surrogate(xupdt)
 
     def fit(
         self,
         xp: torch.Tensor,
-        xq: torch.Tensor,
-        qpi: Optional[np.ndarray] = None,
+        yp: torch.Tensor,
         **kwargs
     ) -> None:
         """
         Updates the weights of the surrogate model.
         Input:
-            Xp: a dataset of real reference designs of shape ND, where N is
+            xp: a dataset of real reference designs of shape ND, where N is
                 the number of designs and D the number of design dimensions.
-            Xq: a dataset of generated designs of shape MD, where M is the
-                number of designs and D the number of design dimensions.
-            qpi: an optional array of shape N specifying the sampling
-                probability over the generated designs.
+            yp: a dataset of the corresponding reference design scores of shape
+                N1, where N is the number of designs.
         Returns:
             None.
         """
-        for _ in range(self.T):
-            tmp_model = deepcopy(self.surrogate)
+        xt = xp.clone()
+        for _ in range(self.steps_per_update):
             self.surrogate.zero_grad()
-            for _ in range(self.steps_per_update):
-                xq = xq.requires_grad_(True)
-                yq = self.surrogate(xq)
-                loss = torch.linalg.norm(
-                    torch.autograd.grad(yq.sum(), xq)[0], dim=-1
-                )
-                loss += self.alpha * torch.square(
-                    (self.surrogate(xq) - tmp_model(xq)).squeeze(dim=-1)
-                )
-                loss.mean().backward(retain_graph=True)
-                for param in self.surrogate.parameters():
-                    param = param - (self.inner_lr * param.grad)
+            xt = xt.requires_grad_(True)
+            yt = self.surrogate(xt)
+            ell = F.mse_loss(yt, yp)
+            ell = ell - (self.alpha * (self.surrogate(xp) - yt))
+            ell.sum().backward(retain_graph=True)
+            for param in self.surrogate.parameters():
+                param = param - (self.lambd * param.grad)
+            xt = xt + (
+                self.eta * torch.autograd.grad(self.surrogate(xt).sum(), xt)[0]
+            )

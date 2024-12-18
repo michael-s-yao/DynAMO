@@ -251,7 +251,7 @@ def main(
 
         if state.designs is None:
             continue
-        forward_model.fit(xp=xp, xq=state.designs.to(device), qpi=qtt)
+        forward_model.fit(xp=xp, xq=state.designs.to(device), yp=y, qpi=qtt)
         policy.fit(state.designs, state.predictions, seed=seed)
 
         if fast_dev_run:

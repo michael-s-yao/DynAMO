@@ -113,7 +113,8 @@ class ExplicitDual(nn.Module):
         qpi: Optional[np.ndarray] = None,
         lr: float = 0.001,
         batch_size: int = 128,
-        patience: int = 100
+        patience: int = 100,
+        **kwargs
     ) -> None:
         """
         Fits the Lipschitz-constrained source critic model.
