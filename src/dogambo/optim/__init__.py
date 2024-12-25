@@ -14,6 +14,7 @@ from .qucb import qUCBPolicy
 from .state import OptimizerState
 from .grad import FirstOrderPolicy, GradientAscentPolicy, AdamAscentPolicy
 from .cmaes import CMAESPolicy
+from .cosyne import CoSyNEPolicy
 
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "GradientAscentPolicy",
     "AdamAscentPolicy",
     "CMAESPolicy",
+    "CoSyNEPolicy",
     "get_optimizers"
 ]
 

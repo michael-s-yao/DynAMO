@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
 from transformers.models.bert.configuration_bert import BertConfig
-from typing import Final
+from typing import Final, Sequence
 
 from ..utils import import_flash_attn
 
@@ -26,6 +26,8 @@ class DNABERT(nn.Module):
     hf_repo_name: Final[str] = "zhihan1996/DNABERT-2-117M"
 
     trust_remote_code: bool = True
+
+    vocabulary: Final[Sequence[str]] = ["A", "C", "G", "T"]
 
     def __init__(self):
         """
@@ -63,7 +65,7 @@ class DNABERT(nn.Module):
             A tensor of embeddings of shape ND, where N is the number of
             input sequences and D is the number of embedding dimensions.
         """
-        idx_to_char = lambda idx: ["A", "C", "G", "T"][idx]  # noqa
+        idx_to_char = lambda idx: self.vocabulary[idx]  # noqa
         dna = dna.detach().cpu().numpy()
         dna = np.vectorize(idx_to_char)(dna)
         embeddings = []

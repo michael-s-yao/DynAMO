@@ -12,7 +12,7 @@ import torch
 from design_bench.oracles.exact_oracle import ExactOracle
 from textstat import flesch_reading_ease
 from transformers import pipeline
-from typing import Set, Union
+from typing import Sequence, Set, Union
 
 from ..models.difflm import DiffusionLM
 from ..data.stories import StoryGenerationDataset
@@ -29,10 +29,17 @@ class StoryGenerationOracle(ExactOracle):
 
     num_samples: int = 128
 
-    def __init__(self, dataset: StoryGenerationDataset, **kwargs):
+    def __init__(
+        self,
+        dataset: StoryGenerationDataset,
+        device_id: int = -1 + torch.cuda.is_available(),
+        **kwargs
+    ):
         """
         Args:
             dataset: the offline dataset for the offline optimization problem.
+            device_id: the CUDA device on which to run LLM inference on, or
+                -1 if CPU inference should be used.
         """
         super().__init__(
             dataset,
@@ -44,7 +51,7 @@ class StoryGenerationOracle(ExactOracle):
             expect_logits=None,
             **kwargs
         )
-        self.device_id = -1 + torch.cuda.is_available()
+        self.device_id = device_id
 
         self.pipe = pipeline(
             "text-generation",
@@ -111,13 +118,8 @@ class StoryGenerationOracle(ExactOracle):
         Returns:
             A batch or single ground-truth prediction made by the oracle model.
         """
-        if isinstance(x, np.ndarray):
-            x = torch.from_numpy(x)
-        x = x.to(next(self.difflm.parameters()).device)
-        x = x.reshape(-1, *self.external_dataset.oracle_input_shape)
-
         scores = []
-        for story in self.difflm.decode(self.difflm(x)):
+        for story in self.decode(x):
             stories = self.pipe(
                 [story],
                 repetition_penalty=2.0,
@@ -133,3 +135,17 @@ class StoryGenerationOracle(ExactOracle):
             scores.append(np.mean([flesch_reading_ease(st) for st in stories]))
 
         return np.array(scores)
+
+    def decode(self, x: Union[torch.Tensor, np.ndarray]) -> Sequence[str]:
+        """
+        Decodes an input design into its corresponding textual output.
+        Input:
+            x: a batch or single design to decode.
+        Returns:
+            A list of the corresponding natural language designs.
+        """
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x)
+        x = x.to(next(self.difflm.parameters()).device)
+        x = x.reshape(-1, *self.external_dataset.oracle_input_shape)
+        return self.difflm.decode(self.difflm(x))

@@ -46,3 +46,4 @@ python surrogate.py -t ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-
 python surrogate.py -t DKittyMorphology-Exact-v0
 python surrogate.py -t StoryGen-Exact-v0
 python surrogate.py -t PenalizedLogP-Exact-v0
+python surrogate.py -t Superconductor-RandomForest-v0

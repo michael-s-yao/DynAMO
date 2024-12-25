@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, EsmModel
-from typing import Sequence
+from typing import Final, Sequence
 
 from ..utils import import_flash_attn
 
@@ -27,6 +27,8 @@ class ESM2(nn.Module):
     hf_repo_name: str = "facebook/esm2_t33_650M_UR50D"
 
     trust_remote_code: bool = True
+
+    vocabulary: Final[Sequence[str]] = list("ARNDCQEGHILKMFPSTWYV")
 
     def __init__(self, **kwargs):
         """
@@ -75,17 +77,3 @@ class ESM2(nn.Module):
                         )
                     embeddings.append(self.model(**inputs).last_hidden_state)
         return torch.stack(embeddings).to(torch.float32)
-
-    @property
-    def vocabulary(self) -> Sequence[str]:
-        """
-        Defines the amino acid vocabulary. Uses the same vocabulary as defined
-        in the Design-Bench repository at the following URL:
-            https://github.com/brandontrabucco/design-bench/blob/
-            e52939588421b5433f6f2e9b359cf013c542bd89/process/process_raw_gfp.py
-        Input:
-            None.
-        Returns:
-            The amino acid vocabulary.
-        """
-        return list("ARNDCQEGHILKMFPSTWYV")

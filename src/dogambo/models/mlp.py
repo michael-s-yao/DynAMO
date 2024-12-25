@@ -128,6 +128,8 @@ class MLP(nn.Module):
         Returns:
             Output tensor of shape Bx(out_dim), where B is the batch size.
         """
+        if X.ndim == 1:
+            X = X.unsqueeze(dim=0)
         if flatten:
             X = X.flatten(start_dim=1)
         else:
