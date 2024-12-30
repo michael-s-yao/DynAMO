@@ -5,14 +5,31 @@ Metric implementations.
 Author(s):
     Michael Yao @michael-s-yao
 
+Citation(s):
+    [1] Kim M, Berto F, Ahn S, Park J. Bootstrapped training of score-
+        conditioned generator for offline design of biological sequences.
+        Proc NeurIPS 2958: 67643-61. (2023). doi: 10.5555/3666122.3669080
+
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import logging
-import numpy as np
-import scipy
+import multiprocess as mp
 import torch
 import torch.nn as nn
-from typing import Optional
+from torchmetrics.text import EditDistance
+from tqdm import tqdm
+from typing import Optional, Sequence
+
+
+def get_diversity_metric_options() -> Sequence[str]:
+    """
+    Returns a list of the implemented diversity metric options.
+    Input:
+        None.
+    Returns:
+        A list of the implemented diversity metric options.
+    """
+    return ["l1-coverage", "pairwise-diversity", "minimum-novelty"]
 
 
 class KLDivergence(nn.Module):
@@ -31,6 +48,21 @@ class KLDivergence(nn.Module):
         )
 
 
+class NMSELoss(nn.Module):
+    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the normalized mean square error loss (NMSE).
+        Input:
+            a: an input tensor of size D, where D is the number of design
+                dimensions.
+            b: an input tensor of size BD, where B is the number of reference
+                dimensions.
+        Returns:
+            The NMSE loss with respect to a of shape B.
+        """
+        return torch.square(a - b).mean(dim=-1) / torch.square(a).mean()
+
+
 def get_logger() -> logging.Logger:
     """
     Returns the logger object associated with the package.
@@ -43,45 +75,6 @@ def get_logger() -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.addHandler(logging.StreamHandler())
     return logger
-
-
-def FID(xq: torch.Tensor, xp: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    """
-    Computes the FID between a set of generated designs and a set of reference
-    real designs. Portions of this code was adapted from the pytorch-fid
-    repository by @mseitzer at https://github.com/mseitzer/pytorch-fid
-    Input:
-        xq: the batch of generated designs of shape ND, where N is the number
-            of generated designs and D the number of design dimensions.
-        xp: a batch of reference designs of shape MD, where M is the number of
-            true reference designs.
-        eps: jitter to add if the product between covariances is singular.
-    Returns:
-        The FID between the set of generated and real designs.
-    """
-    mu_p = np.atleast_1d(torch.mean(xp, axis=0).detach().cpu().numpy())
-    mu_q = np.atleast_1d(torch.mean(xq, axis=0).detach().cpu().numpy())
-    covar_p = np.atleast_2d(torch.cov(xp.T).detach().cpu().numpy())
-    covar_q = np.atleast_2d(torch.cov(xq.T).detach().cpu().numpy())
-
-    dmu = mu_p - mu_q
-
-    covar_mean, _ = scipy.linalg.sqrtm(covar_p.dot(covar_q), disp=False)
-    if not np.isfinite(covar_mean).all():
-        offset = np.eye(covar_p.shape[0]) * eps
-        covar_mean = scipy.linalg.sqrtm(
-            (covar_p + offset).dot(covar_q + offset)
-        )
-
-    if np.iscomplexobj(covar_mean):
-        if not np.allclose(np.diagonal(covar_mean).imag, 0, atol=1e-3):
-            m = np.max(np.abs(covar_mean.imag))
-            raise ValueError("Imaginary component {}".format(m))
-        covar_mean = covar_mean.real
-
-    return dmu.dot(dmu) + np.trace(covar_p) + np.trace(covar_q) - (
-        2.0 * np.trace(covar_mean)
-    )
 
 
 def L1_coverage(xq: torch.Tensor) -> torch.Tensor:
@@ -100,9 +93,91 @@ def L1_coverage(xq: torch.Tensor) -> torch.Tensor:
     )
 
 
+def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the average Levenshtein distance between any two unique discrete
+    sequences from a dataset of generated designs, or the average L2 distance
+    between any two continuous designs in a dataset of generated designs.
+    Input:
+        xq: the batch of generated designs of shape ND, where N is the number
+            of generated designs and D is the sequence length.
+    Returns:
+        The average Levenshtein distance over the dataset.
+    Citation(s):
+        [1] Kim M, Berto F, Ahn S, Park J. Bootstrapped training of score-
+            conditioned generator for offline design of biological sequences.
+            Proc NeurIPS 2958: 67643-61. (2023). doi: 10.5555/3666122.3669080
+    """
+    metric = NMSELoss()
+    if not torch.is_floating_point(xq):
+        metric = EditDistance(reduction=None)
+        xq = ["".join([chr(65 + x) for x in seq]) for seq in xq]
+    else:
+        results = [
+            metric(xq[i], xq).sum() / (len(xq) - 1)
+            for i in tqdm(range(len(xq)))
+        ]
+        return sum(results) / float(len(xq))
+
+    def novelty(idx: int, q: mp.Queue) -> None:
+        return q.put(
+            metric([xq[idx] for _ in range(len(xq))], xq).sum() / (len(xq) - 1)
+        )
+
+    jobs = []
+    q = mp.Queue()
+    for i in tqdm(range(len(xq))):
+        jobs.append(mp.Process(target=novelty, args=(i, q)))
+    for job in jobs:
+        job.start()
+    for job in jobs:
+        job.join()
+    results = [q.get() for i in range(len(xq))]
+    return sum(results) / float(len(xq))
+
+
+def minimum_novelty(xq: torch.Tensor, xp: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the novelty of a set of generated compared to previous designs.
+    Input:
+        xq: the batch of generated designs of shape ND, where N is the number
+            of generated designs and D the number of design dimensions.
+        xp: a batch of reference designs of shape MD, where M is the number of
+            true reference designs.
+    Returns:
+        The average minimum novelty of each of the generated designs.
+    Citation(s):
+        [1] Kim M, Berto F, Ahn S, Park J. Bootstrapped training of score-
+            conditioned generator for offline design of biological sequences.
+            Proc NeurIPS 2958: 67643-61. (2023). doi: 10.5555/3666122.3669080
+    """
+    metric = NMSELoss()
+    if not torch.is_floating_point(xq):
+        metric = EditDistance(reduction=None)
+        xq = ["".join([chr(65 + x) for x in seq]) for seq in xq]
+        xp = ["".join([chr(65 + x) for x in seq]) for seq in xp]
+    else:
+        results = [metric(xq[i], xp).min() for i in tqdm(range(len(xq)))]
+        return sum(results) / float(len(xq))
+
+    def novelty(idx: int, q: mp.Queue) -> None:
+        return q.put(metric([xq[idx] for _ in range(len(xp))], xp).min())
+
+    jobs = []
+    q = mp.Queue()
+    for i in tqdm(range(len(xq))):
+        jobs.append(mp.Process(target=novelty, args=(i, q)))
+    for job in jobs:
+        job.start()
+    for job in jobs:
+        job.join()
+    results = [q.get() for i in range(len(xq))]
+    return sum(results) / float(len(xq))
+
+
 def compute_diversity(
     xq: torch.Tensor, xp: Optional[torch.Tensor] = None, metric: str = ""
-) -> torch.Tensor:
+) -> Optional[torch.Tensor]:
     """
     Computes the diversity of a set of generated designs.
     Input:
@@ -114,8 +189,14 @@ def compute_diversity(
     Returns:
         The diversity of the generated designs.
     """
-    if metric.lower() == "fid":
-        assert xp is not None
-        return FID(xq, xp)
-    elif metric.lower() == "l1":
+    metric = metric.lower().replace("-", "_")
+    if metric.replace("_", "-") not in get_diversity_metric_options():
+        raise ValueError(f"Unrecognized evaluation metric {metric}")
+    elif metric == "l1_coverage":
         return L1_coverage(xq)
+    elif metric == "pairwise_diversity":
+        return pairwise_diversity(xq)
+    elif metric == "minimum_novelty":
+        assert xp is not None
+        return minimum_novelty(xq, xp)
+    return None

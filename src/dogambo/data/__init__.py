@@ -11,6 +11,7 @@ from .critic import SourceCriticDataset
 from .db import DesignBenchBatch, DesignBenchDataModule
 from .stories import StoryGenerationDataset
 from .selfies import SELFIESTokenizer, PenalizedLogPDataset
+from .branin import BraninDataset
 
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "DesignBenchDataModule",
     "StoryGenerationDataset",
     "SELFIESTokenizer",
-    "PenalizedLogPDataset"
+    "PenalizedLogPDataset",
+    "BraninDataset"
 ]

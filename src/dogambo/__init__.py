@@ -91,3 +91,17 @@ register(
     },
     oracle_kwargs={}
 )
+
+
+register(
+    "Branin-Exact-v0",
+    "dogambo.data:BraninDataset",
+    "dogambo.oracle:BraninOracle",
+    dataset_kwargs={
+        "max_samples": None,
+        "distribution": None,
+        "max_percentile": 100.0,
+        "min_percentile": 0.0
+    },
+    oracle_kwargs={}
+)

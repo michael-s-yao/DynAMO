@@ -13,6 +13,7 @@ import os
 import torch
 from datetime import datetime
 from design_bench.task import Task
+from math import isclose
 from pathlib import Path
 from typing import Final, Optional, Union
 
@@ -92,7 +93,7 @@ class OptimizerState:
 
         self.curr_scores.append(self.__predict(xq)[np.newaxis])
 
-        if self.best_yq > yq.max():
+        if self.best_yq > yq.max() or isclose(self.best_yq, yq.max()):
             self.num_fails += 1
         else:
             self.best_yq = yq.max()

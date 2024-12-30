@@ -163,8 +163,19 @@ class ExperimentalResult:
     show_default=True,
     help="Path to the saved experimental results."
 )
+@click.option(
+    "--diversity-metric",
+    "-d",
+    type=click.Choice(dogambo.metrics.get_diversity_metric_options()),
+    default=None,
+    show_default=True,
+    help="Diversity metric to use."
+)
 def main(
-    task: str, savedir: Union[Path, str], oracle_budget: int
+    task: str,
+    oracle_budget: int,
+    savedir: Union[Path, str],
+    diversity_metric: str
 ):
     """Optimizer evaluation script for analyzing experimental results."""
     task, task_name = design_bench.make(task), task
@@ -197,26 +208,35 @@ def main(
 
     click.echo(f"Max Score: {[r.max_score for r in results]}")
     click.echo(f"Median Score: {[r.median_score for r in results]}")
-    if task_name in ["TFBind8-Exact-v0", "TFBind10-Exact-v0", "UTR-ResNet-v0"]:
-        embedder = dogambo.embed.DNABERT()
-    elif task_name in ["GFP-Transformer-v0"]:
-        embedder = dogambo.embed.ESM2()
-    elif task_name in [
-        "ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0",
-        "PenalizedLogP-Exact-v0"
-    ]:
-        embedder = dogambo.embed.ChemBERT()
+
+    if diversity_metric is None:
+        return
+    elif diversity_metric.replace("-", "_") == "l1_coverage":
+        if task_name in [
+            "TFBind8-Exact-v0", "TFBind10-Exact-v0", "UTR-ResNet-v0"
+        ]:
+            embedder = dogambo.embed.DNABERT()
+        elif task_name in ["GFP-Transformer-v0"]:
+            embedder = dogambo.embed.ESM2()
+        elif task_name in [
+            "ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0",
+            "PenalizedLogP-Exact-v0"
+        ]:
+            embedder = dogambo.embed.ChemBERT()
+        else:
+            embedder = nn.Identity()
     else:
         embedder = nn.Identity()
 
     designs = [embedder(r.best_designs) for r in results]
     reference = embedder(dm.val.x)
-    diversity = [
-        dogambo.metrics.compute_diversity(x, reference, metric="l1").item()
-        for x in designs
-    ]
-
-    click.echo(f"Diversity: {diversity}")
+    diversity = []
+    for x in designs:
+        y = dogambo.metrics.compute_diversity(
+            x, reference, metric=diversity_metric
+        )
+        diversity.append(y.item())
+    click.echo(f"Diversity ({diversity_metric}): {diversity}")
 
 
 if __name__ == "__main__":
