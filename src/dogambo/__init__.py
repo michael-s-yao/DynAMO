@@ -7,7 +7,6 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-from design_bench.registration import register
 import numpy as np
 import torch
 
@@ -26,6 +25,8 @@ def override_deprecations() -> None:
     from gym.envs import registration as gym_reg
 
     setattr(np, "bool", bool)
+    setattr(np, "float", np.float64)
+    setattr(np, "int", np.int32)
     setattr(np, "loads", pickle.loads)
     setattr(
         torch.optim.lr_scheduler,
@@ -63,6 +64,9 @@ from . import data, core, embed, models, metrics, utils, optim, oracle
 __all__ = [
     "data", "core", "embed", "models", "metrics", "utils", "optim", "oracle"
 ]
+
+
+from design_bench.registration import register
 
 
 register(
