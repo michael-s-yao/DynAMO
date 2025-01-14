@@ -7,12 +7,19 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
+from __future__ import annotations
+import design_bench
 import lightning.pytorch as pl
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import tensorflow as tf
 from design_bench.task import Task
 from typing import Any, Dict, Final, Optional
+from tensorflow.keras.models import load_model
+from pathlib import Path
+from typing import Union
 
 from ..data import DesignBenchBatch
 from .mlp import MLP
@@ -22,6 +29,7 @@ from ..metrics import KLDivergence
 
 class EncDecPropModule(pl.LightningModule):
     """Joint Encoder-Decoder-PropertyPredictor Model."""
+
     def __init__(
         self,
         task: Task,
@@ -231,3 +239,167 @@ class EncDecPropModule(pl.LightningModule):
         if self.task.is_discrete:
             params += list(self.vae.parameters())
         return optim.Adam(params, lr=self.lr)
+
+    @classmethod
+    def load_from_RoMA_checkpoint(
+        cls, ckpt_fn: Union[Path, str], task: Task, **kwargs
+    ) -> EncDecPropModule:
+        """
+        Loads the RoMA pretrained model. Importantly, using the RoMA model
+        (written in TensorFlow) means that gradient information will not be
+        available, and this method should only be used with non-first-order
+        optimization methods.
+        Input:
+            task: the Design-Bench offline optimization task.
+            ckpt_fn: the checkpoint of the original VAE-surrogate model.
+        Returns:
+            The loaded model.
+        Notes:
+            [1] The path to the directory of RoMA-pretrained models should be
+                specified using the ROMA_MODELDIR environmental variable. By
+                default, it is set to `~/RoMA`.
+            [2] We use the RoMA model training scripts provided by the original
+                authors at https://github.com/sihyun-yu/RoMA. Both the VAE
+                encoder (only for discrete tasks) and forward surrogate models
+                should be saved according to the following directory structure:
+                    ROMA_MODELDIR
+                    |-- task_name (e.g., TFBind8-Exact-v0)
+                        |-- model (i.e., the saved TensorFlow forward surrogate
+                            model directory.)
+                        |-- encoder (i.e., the saved TensorFlow VAE encoder.)
+                The VAE encoder should be saved after training here:
+                    - github.com/sihyun-yu/RoMA/
+                        design_baselines/safeweight_latent/__init__.py#L125
+                The model should be saved after training here:
+                    - github.com/sihyun-yu/RoMA/
+                        design_baselines/safeweight_latent/__init__.py#L198
+                    - github.com/sihyun-yu/RoMA/
+                        design_baselines/safeweight/__init__.py#L142
+        """
+        model = cls.load_from_checkpoint(ckpt_fn, task=task, **kwargs)
+
+        task_spec = filter(
+            lambda x: isinstance(x.dataset, str) and (
+                x.dataset.split(":")[-1] in str(type(task.dataset))
+            ),
+            design_bench.registry.all()
+        )
+        task_spec = filter(
+            lambda x: isinstance(x.oracle, str) and (
+                x.oracle.split(":")[-1] in str(type(task.oracle))
+            ),
+            task_spec
+        )
+        task_name = next(task_spec).task_name
+        surrogate_path = os.path.join(
+            os.environ.get("ROMA_MODELDIR", Path.home() / "RoMA"),
+            task_name,
+            "model"
+        )
+        surrogate = load_model(surrogate_path)
+        surrogate.compile()
+        if task.is_discrete:
+            encoder_path = os.path.join(
+                os.environ.get("ROMA_MODELDIR", Path.home() / "RoMA"),
+                task_name,
+                "encoder"
+            )
+            encoder = load_model(encoder_path)
+            encoder.compile()
+
+        class Wrapper(nn.Module):
+            def __init__(self, *args, **kwargs):
+                super().__init__()
+                self.dummy = nn.Linear(
+                    1, 1, device=next(model.parameters()).device
+                )
+
+            def forward(self, X: torch.Tensor) -> torch.Tensor:
+                if model.task.is_discrete:
+                    design = model.vae.sample(z=X).detach().cpu().numpy()
+                    design = design[..., 1:]
+                    design, _ = tf.split(encoder(design), 2, axis=-1)
+                else:
+                    design = X.detach().cpu().numpy()
+                y = torch.from_numpy(surrogate(design).numpy()[..., 0])
+                return y.to(X)
+
+        model.surrogate = Wrapper()
+        return model
+
+    @classmethod
+    def load_from_COMs_checkpoint(
+        cls, ckpt_fn: Union[Path, str], task: Task, **kwargs
+    ) -> EncDecPropModule:
+        """
+        Loads the COMs pretrained model. Importantly, using the COMs model
+        (written in TensorFlow) means that gradient information will not be
+        available, and this method should only be used with non-first-order
+        optimization methods.
+        Input:
+            task: the Design-Bench offline optimization task.
+            ckpt_fn: the checkpoint of the original VAE-surrogate model.
+        Returns:
+            The loaded model.
+        Notes:
+            [1] The path to the directory of COMs-pretrained models should be
+                specified using the COMS_MODELDIR environmental variable. By
+                default, it is set to `~/design-baselines`.
+            [2] We use the COMs model training scripts provided by the original
+                authors at https://github.com/brandontrabucco/design-baselines.
+                Both the VAE encoder (only for discrete tasks) and forward
+                surrogate models should be saved according to the following
+                directory structure:
+                    COMS_MODELDIR
+                    |-- task_name (e.g., TFBind8-Exact-v0)
+                        |-- model (i.e., the saved TensorFlow forward surrogate
+                            model directory.)
+                        |-- encoder (i.e., the saved TensorFlow VAE encoder.)
+                The VAE encoder should be saved after training here:
+                    - github.com/brandontrabucco/design-baselines/
+                        design_baselines/coms_cleaned/__init__.py#L266
+                The model should be saved after training here:
+                    - github.com/brandontrabucco/design-baselines/
+                        design_baselines/coms_cleaned/__init__.py#L303
+        """
+        model = cls.load_from_checkpoint(ckpt_fn, task=task, **kwargs)
+
+        task_spec = filter(
+            lambda x: isinstance(x.dataset, str) and (
+                x.dataset.split(":")[-1] in str(type(task.dataset))
+            ),
+            design_bench.registry.all()
+        )
+        task_spec = filter(
+            lambda x: isinstance(x.oracle, str) and (
+                x.oracle.split(":")[-1] in str(type(task.oracle))
+            ),
+            task_spec
+        )
+        task_name = next(task_spec).task_name
+        surrogate_path = os.path.join(
+            os.environ.get("COMS_MODELDIR", Path.home() / "design-baselines"),
+            task_name,
+            "model"
+        )
+        surrogate = load_model(surrogate_path)
+        surrogate.compile()
+
+        class Wrapper(nn.Module):
+            def __init__(self, *args, **kwargs):
+                super().__init__()
+                self.dummy = nn.Linear(
+                    1, 1, device=next(model.parameters()).device
+                )
+
+            def forward(self, X: torch.Tensor) -> torch.Tensor:
+                if model.task.is_discrete:
+                    design = model.vae.sample(z=X).detach().cpu().numpy()
+                    design = model.task.to_logits(design[..., 1:])
+                else:
+                    design = X.detach().cpu().numpy()
+                y = torch.from_numpy(surrogate(design).numpy()[..., 0])
+                return y.to(X)
+
+        model.surrogate = Wrapper()
+        return model

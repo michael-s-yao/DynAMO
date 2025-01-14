@@ -16,7 +16,7 @@ import torch
 import yaml
 from botorch.utils.transforms import unnormalize
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import dogambo
 
@@ -114,6 +114,13 @@ import dogambo
     help="Step size for first-order optimization methods."
 )
 @click.option(
+    "--pretraining-strategy",
+    type=click.Choice(["None", "COMs", "RoMA"], case_sensitive=False),
+    default=None,
+    show_default=True,
+    help="Optional forward surrogate model pretraining strategy."
+)
+@click.option(
     "--seed", type=int, default=0, show_default=True, help="Random seed."
 )
 @click.option(
@@ -146,6 +153,7 @@ def main(
     tau: float = 1.0,
     gamma: float = 1.0,
     eta: float = 0.01,
+    pretraining_strategy: Optional[str] = None,
     seed: int = 0,
     device: str = "auto",
     savedir: Union[Path, str] = "results",
@@ -155,7 +163,10 @@ def main(
     pl.seed_everything(seed)
     rng = np.random.default_rng(seed)
 
-    task, task_name = design_bench.make(task), task
+    task_name, oracle_kwargs = task, {}
+    if task == "StoryGen-Exact-v0" and transform == "GAMBOTransform":
+        oracle_kwargs["device_id"] = -1 + (2 * (torch.cuda.device_count() > 1))
+    task = design_bench.make(task_name, oracle_kwargs=oracle_kwargs)
     if not task.is_discrete:
         task.map_normalize_x()
 
@@ -165,9 +176,18 @@ def main(
     dm.prepare_data()
     dm.setup()
 
-    model = dogambo.models.EncDecPropModule.load_from_checkpoint(
-        dogambo.utils.get_model_ckpt(task_name), task=task
-    )
+    if str(pretraining_strategy).strip().lower() == "roma":
+        model = dogambo.models.EncDecPropModule.load_from_RoMA_checkpoint(
+            dogambo.utils.get_model_ckpt(task_name), task=task
+        )
+    elif str(pretraining_strategy).strip().lower() == "coms":
+        model = dogambo.models.EncDecPropModule.load_from_COMs_checkpoint(
+            dogambo.utils.get_model_ckpt(task_name), task=task
+        )
+    else:
+        model = dogambo.models.EncDecPropModule.load_from_checkpoint(
+            dogambo.utils.get_model_ckpt(task_name), task=task
+        )
     vae, surrogate = model.vae, model.surrogate
     device = next(model.parameters()).device
 
@@ -208,6 +228,7 @@ def main(
         sampling_bounds=bounds,
         seed=seed,
         eta=eta,
+        num_actors=torch.cuda.device_count(),
         device=device
     )
 

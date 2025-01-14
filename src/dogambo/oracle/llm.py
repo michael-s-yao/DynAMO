@@ -134,7 +134,7 @@ class StoryGenerationOracle(ExactOracle):
             stories = [st[0]["generated_text"] for st in stories]
             scores.append(np.mean([flesch_reading_ease(st) for st in stories]))
 
-        return np.array(scores)
+        return np.array(scores).astype(np.float32)
 
     def decode(self, x: Union[torch.Tensor, np.ndarray]) -> Sequence[str]:
         """

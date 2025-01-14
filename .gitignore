@@ -120,3 +120,4 @@ results/
 *.csv
 *.tar.xz
 multicoil_test/
+*.cache

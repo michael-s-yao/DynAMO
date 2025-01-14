@@ -157,7 +157,9 @@ def minimum_novelty(xq: torch.Tensor, xp: torch.Tensor) -> torch.Tensor:
         xq = ["".join([chr(65 + x) for x in seq]) for seq in xq]
         xp = ["".join([chr(65 + x) for x in seq]) for seq in xp]
     else:
-        results = [metric(xq[i], xp).min() for i in tqdm(range(len(xq)))]
+        results = [
+            metric(xq[i], xp.to(xq)).min() for i in tqdm(range(len(xq)))
+        ]
         return sum(results) / float(len(xq))
 
     def novelty(idx: int, q: mp.Queue) -> None:

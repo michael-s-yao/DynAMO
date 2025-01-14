@@ -85,9 +85,12 @@ class RoMATransform(BaseObjectiveTransform):
             for _ in range(self.steps_per_update):
                 xq = xq.requires_grad_(True)
                 yq = self.surrogate(xq)
-                loss = torch.linalg.norm(
-                    torch.autograd.grad(yq.sum(), xq)[0], dim=-1
-                )
+                try:
+                    loss = torch.linalg.norm(
+                        torch.autograd.grad(yq.sum(), xq)[0], dim=-1
+                    )
+                except RuntimeError:
+                    return
                 loss += self.alpha * torch.square(
                     (self.surrogate(xq) - tmp_model(xq)).squeeze(dim=-1)
                 )

@@ -26,7 +26,7 @@ class COMsTransform(BaseObjectiveTransform):
         self,
         surrogate: torch.Tensor,
         alpha: float = 0.1,
-        beta: float = 0.9,
+        _beta: float = 0.9,
         eta: float = 0.01,
         steps_per_update: int = 100,
         lambd: float = 0.01,
@@ -37,7 +37,7 @@ class COMsTransform(BaseObjectiveTransform):
             surrogate: the original forward surrogate model.
             alpha: a hyperparameter controlling the tradeoff between
                 conservatism and regression. Default 0.1.
-            beta: a hyperparameter controlling the weighted penalty of the
+            _beta: a hyperparameter controlling the weighted penalty of the
                 hallucinated, lookahead gradient-ascient iterate. Default 0.9.
             eta: a hyperparameter controlling the step size of the
                 hallucinated, lookahead gradient-ascient iterate. Default 0.01.
@@ -45,10 +45,11 @@ class COMsTransform(BaseObjectiveTransform):
                 Default 100.
             lambd: the step size for weight updates. Default 0.001.
         """
+        kwargs.pop("beta", None)
         super().__init__(
             surrogate=surrogate,
             alpha=alpha,
-            beta=beta,
+            beta=_beta,
             eta=eta,
             steps_per_update=steps_per_update,
             lambd=lambd,
@@ -64,9 +65,16 @@ class COMsTransform(BaseObjectiveTransform):
             The forward model predictions of the input designs.
         """
         xq = xq.requires_grad_(True)
-        xupdt = xq + (
-            self.eta * torch.autograd.grad(self.surrogate(xq).sum(), xq)[0]
-        )
+        try:
+            grad = torch.autograd.grad(self.surrogate(xq).sum(), xq)[0]
+        except RuntimeError:
+            y = self.surrogate(xq).squeeze()
+            grad = torch.vstack([
+                torch.gradient(y, spacing=(xq[..., dim],))[0]
+                for dim in range(xq.size(dim=-1))
+            ])
+            grad = grad.T
+        xupdt = xq + (self.eta * grad)
         return self.surrogate(xq) - self.beta * self.surrogate(xupdt)
 
     def fit(
@@ -90,9 +98,12 @@ class COMsTransform(BaseObjectiveTransform):
             self.surrogate.zero_grad()
             xt = xt.requires_grad_(True)
             yt = self.surrogate(xt)
-            ell = F.mse_loss(yt, yp)
+            ell = F.mse_loss(yt.squeeze(), yp.squeeze())
             ell = ell - (self.alpha * (self.surrogate(xp) - yt))
-            ell.sum().backward(retain_graph=True)
+            try:
+                ell.sum().backward(retain_graph=True)
+            except RuntimeError:
+                return
             for param in self.surrogate.parameters():
                 param = param - (self.lambd * param.grad)
             xt = xt + (

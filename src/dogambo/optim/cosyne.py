@@ -16,8 +16,9 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 import torch
 from evotorch import Problem
 from evotorch.algorithms.ga import Cosyne
+from evotorch.decorators import on_cuda, vectorized
 from evotorch.logging import StdOutLogger
-from typing import Any, Callable, Dict, Final, Optional
+from typing import Any, Callable, Dict, Final, Optional, Union
 
 from .base import BaseGenerativePolicy
 
@@ -34,6 +35,8 @@ class CoSyNEPolicy(BaseGenerativePolicy):
         eta: float = 0.01,
         seed: int = 0,
         quiet: bool = True,
+        num_actors: int = 4,
+        num_gpus_per_actor: Final[Union[float, int]] = 1,
         **kwargs
     ):
         """
@@ -47,6 +50,8 @@ class CoSyNEPolicy(BaseGenerativePolicy):
             eta: step size. Default 0.01.
             seed: random seed. Default 0.
             quiet: whether to not print ouputs to stdout. Default False.
+            num_actors: number of actors for parallelization. Default 4.
+            num_gpus_per_actor: number of GPUs for each actor. Default 1.
         """
         assert sampling_bounds is not None
         super().__init__(
@@ -61,6 +66,8 @@ class CoSyNEPolicy(BaseGenerativePolicy):
         self.quiet: Final[bool] = quiet
         self.solution_length: Final[int] = self.sampling_bounds.size(dim=-1)
         self.searcher: Cosyne = None
+        self.num_actors: Final[int] = num_actors
+        self.num_gpus_per_actor: Final[Union[float, int]] = num_gpus_per_actor
 
     def forward(
         self, func: Callable[[torch.Tensor], torch.Tensor], **kwargs
@@ -73,13 +80,25 @@ class CoSyNEPolicy(BaseGenerativePolicy):
             A batch of candidates to evaluate of shape BD, where B is the batch
             size and D is the number of design dimensions.
         """
+        @on_cuda
+        @vectorized
+        def wrapper(x: torch.Tensor) -> torch.Tensor:
+            return func(x.clone()).squeeze(dim=-1)
+
+        kwargs = {"device": self.sampling_bounds.device}
+        if self.num_actors > 1:
+            kwargs.update({
+                "device": "cpu",
+                "num_actors": self.num_actors,
+                "num_gpus_per_actor": self.num_gpus_per_actor
+            })
         problem = Problem(
             "max",
-            lambda x: func(x.clone()).squeeze(dim=-1),
+            wrapper,
             solution_length=self.solution_length,
             initial_bounds=self.sampling_bounds,
-            device=self.sampling_bounds.device,
-            dtype=self.sampling_bounds.dtype
+            dtype=self.sampling_bounds.dtype,
+            **kwargs
         )
         if self.searcher is None:
             self.searcher = Cosyne(
