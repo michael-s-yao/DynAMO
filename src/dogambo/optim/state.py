@@ -66,10 +66,7 @@ class OptimizerState:
             setattr(self, key, val)
 
         self.xq, self.yq = None, None
-        self.scores = []
-
         self.curr_xq, self.curr_yq = None, None
-        self.curr_scores = []
 
     def log(self, xq: torch.Tensor, yq: torch.Tensor) -> None:
         """
@@ -90,8 +87,6 @@ class OptimizerState:
             self.curr_yq = yq.unsqueeze(dim=0)
         else:
             self.curr_yq = torch.cat((self.curr_yq, yq.unsqueeze(dim=0)))
-
-        self.curr_scores.append(self.__predict(xq)[np.newaxis])
 
         if self.best_yq > yq.max() or isclose(self.best_yq, yq.max()):
             self.num_fails += 1
@@ -122,9 +117,6 @@ class OptimizerState:
             self.yq, self.curr_yq = self.curr_yq, None
         else:
             self.yq, self.curr_yq = torch.cat((self.yq, self.curr_yq)), None
-
-        self.scores = self.scores + self.curr_scores
-        self.curr_scores = []
 
         self.best_yq = -np.inf
         if self.logger is not None and not self.has_converged:
@@ -188,16 +180,12 @@ class OptimizerState:
             xq = xq[..., 1:]  # Remove start token.
         else:
             xq = self.task.denormalize_x(xq.detach().cpu().numpy())
-        y = self.task.predict(xq)
-        if y.ndim < 2:
-            y = y[..., np.newaxis]
-        return y
 
-    def save(self, **kwargs) -> None:
+    def save(self, oracle_evaluation_budget: int, **kwargs) -> None:
         """
         Saves all of the recorded designs and scores.
         Input:
-            None.
+            oracle_evaluation_budget: the oracle evaluation budget.
         Returns:
             None.
         """
@@ -207,6 +195,30 @@ class OptimizerState:
             os.makedirs(self.savedir, exist_ok=True)
 
         assert self.curr_xq is None and self.curr_yq is None
+
+        idxs = np.argsort(self.yq.detach().cpu().numpy().reshape(-1))
+        idxs = idxs[-min(oracle_evaluation_budget, len(idxs)):]
+
+        predictions = self.yq.reshape(-1)[idxs]
+        predictions = predictions.detach().cpu().numpy()[..., np.newaxis]
+
+        designs = self.xq.reshape(-1, self.model.vae.latent_size)[idxs]
+        if self.task.is_discrete:
+            designs = designs.reshape(
+                -1, self.model.vae.bottleneck_size, self.model.vae.model_dim
+            )
+            designs = designs.to(next(self.model.vae.parameters()))
+        designs = self.model.vae.sample(z=designs)
+        if self.task.is_discrete:
+            # Remove start token.
+            designs = designs[..., 1:].detach().cpu().numpy()
+        else:
+            designs = self.task.denormalize_x(designs.detach().cpu().numpy())
+
+        scores = self.task.predict(designs)
+        if scores.ndim < 2:
+            scores = scores[..., np.newaxis]
+
         np.savez(
             os.path.join(
                 self.savedir,
@@ -216,8 +228,8 @@ class OptimizerState:
                     seed=self.seed
                 )
             ),
-            designs=self.xq.detach().cpu().numpy(),
-            predictions=self.yq.detach().cpu().numpy(),
-            scores=np.concatenate(self.scores),
+            designs=designs,
+            predictions=predictions,
+            scores=scores,
             **kwargs
         )

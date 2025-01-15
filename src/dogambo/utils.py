@@ -12,6 +12,7 @@ import design_bench
 import numpy as np
 import os
 import torch
+from design_bench.task import Task
 from contextlib import nullcontext
 from pathlib import Path
 from typing import ContextManager, Dict, Callable, Optional, Union
@@ -115,3 +116,30 @@ def import_flash_attn() -> Dict[str, Union[str, ContextManager]]:
         return {
             "attn_implementation": "eager", "autocast_context": nullcontext()
         }
+
+
+def get_task_name_from_task(task: Task) -> Optional[str]:
+    """
+    Returns the task name of a given input task.
+    Input:
+        task: the offline MBO task to find the task name for.
+    Returns:
+        The name of the input task, or None if the task name cannot be found.
+    """
+    task_spec = filter(
+        lambda x: isinstance(x.dataset, str) and (
+            x.dataset.split(":")[-1] in str(type(task.dataset))
+        ),
+        design_bench.registry.all()
+    )
+    task_spec = filter(
+        lambda x: isinstance(x.oracle, str) and (
+            x.oracle.split(":")[-1] in str(type(task.oracle))
+        ),
+        task_spec
+    )
+    try:
+        task_name = next(task_spec).task_name
+    except StopIteration:
+        task_name = None
+    return task_name

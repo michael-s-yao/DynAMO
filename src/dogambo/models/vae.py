@@ -49,7 +49,7 @@ class IdentityVAE(nn.Module):
         Returns:
             A tensor of n datums from the prior distribution.
         """
-        return torch.randn(n, self.input_size)
+        return torch.randn(n, self.latent_size)
 
     def sample_posterior(
         self, *args, n: Optional[int] = None, **kwargs
@@ -99,6 +99,25 @@ class IdentityVAE(nn.Module):
         z, mu, logvar = self.encode(inp)
         out = self.decode(z, inp)
         return out, mu, logvar
+
+    @torch.no_grad()
+    def sample(
+        self,
+        n: Optional[int] = -1,
+        z: Optional[torch.Tensor] = None,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Samples and decodes n datums from the VAE latent space distribution.
+        Input:
+            n: number of points to sample.
+            z: optional specified latent space points to decode.
+        Returns:
+            sample: sampled decoded molecules.
+        """
+        if z is None:
+            return self.sample_prior(n)
+        return z.detach()
 
 
 class InfoTransformerVAE(nn.Module):
@@ -346,7 +365,7 @@ class InfoTransformerVAE(nn.Module):
             return_logits: whether to return the decoder logits in addition
                 to the sampled molecules. Default False.
         Returns:
-            sample: sampled decoded molecules.
+            sample: sampled decoded sequences.
             logits: returned if `return_logits` is True.
         """
         model_state = self.training

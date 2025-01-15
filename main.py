@@ -121,6 +121,14 @@ import dogambo
     help="Optional forward surrogate model pretraining strategy."
 )
 @click.option(
+    "--oracle-evaluation-budget",
+    "-k",
+    type=int,
+    default=128,
+    show_default=True,
+    help="Oracle evaluation budget."
+)
+@click.option(
     "--seed", type=int, default=0, show_default=True, help="Random seed."
 )
 @click.option(
@@ -154,6 +162,7 @@ def main(
     gamma: float = 1.0,
     eta: float = 0.01,
     pretraining_strategy: Optional[str] = None,
+    oracle_evaluation_budget: int = 128,
     seed: int = 0,
     device: str = "auto",
     savedir: Union[Path, str] = "results",
@@ -213,12 +222,15 @@ def main(
 
     forward_model = getattr(dogambo.core, transform)(
         surrogate,
+        vae=vae,
         xp=xp,
         yp=y,
         beta=beta,
         tau=tau,
         W0=w0,
         dual_step_size=dual_step_size,
+        task=task,
+        pool=dm.train_dataloader(),
         seed=seed
     )
 
@@ -278,7 +290,7 @@ def main(
         if fast_dev_run:
             return
 
-    state.save(cli=sys.argv)
+    state.save(oracle_evaluation_budget, cli=" ".join(["python"] + sys.argv))
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ Author(s):
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 from __future__ import annotations
-import design_bench
 import lightning.pytorch as pl
 import os
 import torch
@@ -25,6 +24,7 @@ from ..data import DesignBenchBatch
 from .mlp import MLP
 from .vae import IdentityVAE, InfoTransformerVAE
 from ..metrics import KLDivergence
+from ..utils import get_task_name_from_task
 
 
 class EncDecPropModule(pl.LightningModule):
@@ -250,8 +250,8 @@ class EncDecPropModule(pl.LightningModule):
         available, and this method should only be used with non-first-order
         optimization methods.
         Input:
-            task: the Design-Bench offline optimization task.
             ckpt_fn: the checkpoint of the original VAE-surrogate model.
+            task: the Design-Bench offline optimization task.
         Returns:
             The loaded model.
         Notes:
@@ -278,19 +278,8 @@ class EncDecPropModule(pl.LightningModule):
         """
         model = cls.load_from_checkpoint(ckpt_fn, task=task, **kwargs)
 
-        task_spec = filter(
-            lambda x: isinstance(x.dataset, str) and (
-                x.dataset.split(":")[-1] in str(type(task.dataset))
-            ),
-            design_bench.registry.all()
-        )
-        task_spec = filter(
-            lambda x: isinstance(x.oracle, str) and (
-                x.oracle.split(":")[-1] in str(type(task.oracle))
-            ),
-            task_spec
-        )
-        task_name = next(task_spec).task_name
+        task_name = get_task_name_from_task(task)
+        assert task_name is not None
         surrogate_path = os.path.join(
             os.environ.get("ROMA_MODELDIR", Path.home() / "RoMA"),
             task_name,
@@ -337,8 +326,8 @@ class EncDecPropModule(pl.LightningModule):
         available, and this method should only be used with non-first-order
         optimization methods.
         Input:
-            task: the Design-Bench offline optimization task.
             ckpt_fn: the checkpoint of the original VAE-surrogate model.
+            task: the Design-Bench offline optimization task.
         Returns:
             The loaded model.
         Notes:
@@ -364,19 +353,8 @@ class EncDecPropModule(pl.LightningModule):
         """
         model = cls.load_from_checkpoint(ckpt_fn, task=task, **kwargs)
 
-        task_spec = filter(
-            lambda x: isinstance(x.dataset, str) and (
-                x.dataset.split(":")[-1] in str(type(task.dataset))
-            ),
-            design_bench.registry.all()
-        )
-        task_spec = filter(
-            lambda x: isinstance(x.oracle, str) and (
-                x.oracle.split(":")[-1] in str(type(task.oracle))
-            ),
-            task_spec
-        )
-        task_name = next(task_spec).task_name
+        task_name = get_task_name_from_task(task)
+        assert task_name is not None
         surrogate_path = os.path.join(
             os.environ.get("COMS_MODELDIR", Path.home() / "design-baselines"),
             task_name,

@@ -13,6 +13,7 @@ from .dogambo_core import DOGAMBOTransform
 from .gambo import GAMBOTransform
 from .roma import RoMATransform
 from .coms import COMsTransform
+from .romo import ROMOTransform
 
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "DOGAMBOTransform",
     "GAMBOTransform",
     "RoMATransform",
+    "ROMOTransform",
     "COMsTransform",
     "get_transforms"
 ]
