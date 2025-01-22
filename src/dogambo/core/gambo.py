@@ -70,6 +70,7 @@ class GAMBOTransform(BaseObjectiveTransform):
             seed=seed,
             **kwargs
         )
+        self.is_dynamic_alpha: Final[bool] = self._alpha is None
         self.critic = LipschitzMLP(
             self.xp.size(dim=-1), 1, self.critic_hidden_dims
         )
@@ -108,6 +109,8 @@ class GAMBOTransform(BaseObjectiveTransform):
         Returns:
             None.
         """
+        if self.is_dynamic_alpha:
+            self._alpha = None
         return self.critic.fit(xp, xq, **kwargs)
 
     def wasserstein(self, P: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
@@ -141,7 +144,10 @@ class GAMBOTransform(BaseObjectiveTransform):
         alpha = torch.from_numpy(np.linspace(0.0, 1.0, num=201))
         if torch.cuda.is_available():
             alpha = alpha.cuda()
-        return alpha[torch.argmax(self._score(alpha))]
+        alpha = alpha[torch.argmax(self._score(alpha))]
+        if self.is_dynamic_alpha:
+            self._alpha = alpha
+        return alpha
 
     def _score(self, alpha: torch.Tensor) -> torch.Tensor:
         """

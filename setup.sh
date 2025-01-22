@@ -40,10 +40,9 @@ wget https://figshare.com/ndownloader/files/13612766 -O val.smiles
 
 # Train the surrogate and VAE models.
 python surrogate.py -t TFBind8-Exact-v0
-python surrogate.py -t GFP-Transformer-v0
 python surrogate.py -t UTR-ResNet-v0
 python surrogate.py -t ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0
-python surrogate.py -t DKittyMorphology-Exact-v0
-python surrogate.py -t StoryGen-Exact-v0
 python surrogate.py -t PenalizedLogP-Exact-v0
 python surrogate.py -t Superconductor-RandomForest-v0
+python surrogate.py -t DKittyMorphology-Exact-v0
+python surrogate.py -t StoryGen-Exact-v0

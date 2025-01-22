@@ -48,6 +48,31 @@ class KLDivergence(nn.Module):
         )
 
 
+class ChiSquaredDivergence(nn.Module):
+    def forward(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the Chi-squared Divergence with respect to the multivariate
+        normal distribution.
+        Input:
+            mu: the mean of the input distribution.
+            logvar: the logarithm of the variance of the input distribution.
+        Returns:
+            The Chi-squared Divergence.
+        """
+        var = torch.exp(logvar)
+        coeff = torch.where(
+            var > 0.5,
+            var / torch.sqrt(2.0 * var - 1.0),
+            1.0 / (torch.sqrt(var * (2.0 - var)))
+        )
+        arg = torch.square(mu - 1.0) * torch.where(
+            var > 0.5,
+            2.0 * var - 1.0,
+            2.0 - var
+        )
+        return (coeff * torch.exp(arg)) - 1.0
+
+
 class NMSELoss(nn.Module):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         """

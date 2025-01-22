@@ -70,6 +70,10 @@ class FirstOrderPolicy(BaseGenerativePolicy):
         for _ in range(self.num_steps_per_acq):
             self.optimizer.zero_grad()
             func(self.X).sum().backward(retain_graph=True)
+            if self.X.grad is not None:
+                self.X.grad = torch.where(
+                    torch.isnan(self.X.grad), 0.0, self.X.grad
+                )
             self.optimizer.step()
             self.X = torch.clamp(
                 self.X.detach(),

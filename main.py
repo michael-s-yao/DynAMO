@@ -121,6 +121,19 @@ import dogambo
     help="Optional forward surrogate model pretraining strategy."
 )
 @click.option(
+    "--mixed-chi-squared-weighting",
+    type=float,
+    default=None,
+    show_default=True,
+    help="The optional weighting of the Chi-squared divergence penalty."
+)
+@click.option(
+    "--ablate-critic/--no-ablate-critic",
+    default=False,
+    show_default=True,
+    help="Whether to ablate source critic feedback."
+)
+@click.option(
     "--oracle-evaluation-budget",
     "-k",
     type=int,
@@ -162,6 +175,8 @@ def main(
     gamma: float = 1.0,
     eta: float = 0.01,
     pretraining_strategy: Optional[str] = None,
+    mixed_chi_squared_weighting: Optional[float] = None,
+    ablate_critic: bool = False,
     oracle_evaluation_budget: int = 128,
     seed: int = 0,
     device: str = "auto",
@@ -175,7 +190,7 @@ def main(
     task_name, oracle_kwargs = task, {}
     if task == "StoryGen-Exact-v0" and transform == "GAMBOTransform":
         oracle_kwargs["device_id"] = -1 + (2 * (torch.cuda.device_count() > 1))
-    task = design_bench.make(task_name, oracle_kwargs=oracle_kwargs)
+    task = dogambo.make(task_name, oracle_kwargs=oracle_kwargs)
     if not task.is_discrete:
         task.map_normalize_x()
 
@@ -231,6 +246,8 @@ def main(
         dual_step_size=dual_step_size,
         task=task,
         pool=dm.train_dataloader(),
+        mixed_chi_squared_weighting=mixed_chi_squared_weighting,
+        ablate_critic=ablate_critic,
         seed=seed
     )
 

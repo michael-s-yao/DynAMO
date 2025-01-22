@@ -58,15 +58,77 @@ override_deprecations()
 torch.set_default_dtype(torch.float64)
 
 
+import design_bench
+from typing import Any, Callable, Dict, Optional, Union
 from . import data, core, embed, models, metrics, utils, optim, oracle
 
 
 __all__ = [
-    "data", "core", "embed", "models", "metrics", "utils", "optim", "oracle"
+    "data",
+    "core",
+    "embed",
+    "models",
+    "metrics",
+    "utils",
+    "optim",
+    "oracle",
+    "register",
+    "make"
 ]
 
 
-from design_bench.registration import register
+def register(
+    task_name: str,
+    dataset: Union[str, Callable],
+    oracle: Union[str, Callable],
+    dataset_kwargs: Optional[Dict[str, Any]] = None,
+    oracle_kwargs: Optional[Dict[str, Any]] = None
+):
+    """
+    Calls the Design-Bench `register()` function to register a new task.
+    Input:
+        task_name: the name of the MBO task.
+        dataset: the import path to the target dataset class.
+        oracle: the import path to the target oracle class.
+        dataset_kwargs: optional additional keyword arguments that are provided
+            to the dataset class when it is initialized.
+        oracle_kwargs: optional additional keyword arguments that are provided
+            to the oracle class when it is initialized.
+    Returns:
+        None.
+    """
+    return design_bench.registration.register(
+        task_name,
+        dataset,
+        oracle,
+        dataset_kwargs=dataset_kwargs,
+        oracle_kwargs=oracle_kwargs
+    )
+
+
+def make(
+    task_name: str,
+    dataset_kwargs: Optional[Dict[str, Any]] = None,
+    oracle_kwargs: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> design_bench.task.Task:
+    """
+    Instantiates the intended task.
+    Input:
+        task_name: the name of the MBO task.
+        dataset_kwargs: optional additional keyword arguments for initializing
+            the offline dataset.
+        oracle_kwargs: optional additional keyword arguments for initializing
+            the offline oracle function.
+    Returns:
+        The specified offline MBO task.
+    """
+    return design_bench.registration.make(
+        task_name,
+        dataset_kwargs=dataset_kwargs,
+        oracle_kwargs=oracle_kwargs,
+        **kwargs
+    )
 
 
 register(

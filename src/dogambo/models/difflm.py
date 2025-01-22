@@ -23,6 +23,7 @@ import logging
 import sys
 import torch
 import torch.nn as nn
+import warnings
 from huggingface_hub import PyTorchModelHubMixin
 from pathlib import Path
 from transformers import (
@@ -35,9 +36,14 @@ DIFFUSIONLM_PATH: Final[Union[Path, str]] = os.environ.get(
     "DIFFUSIONLM_PATH", "latent-diffusion-for-language"
 )
 sys.path.append(DIFFUSIONLM_PATH)
-from latent_models.bart_latent_model import BARTForConditionalGenerationLatent
-from diffusion.text_denoising_diffusion import GaussianDiffusion
-from model.diffusion_transformer import DiffusionTransformer
+try:
+    from latent_models.bart_latent_model import (
+        BARTForConditionalGenerationLatent
+    )
+    from diffusion.text_denoising_diffusion import GaussianDiffusion
+    from model.diffusion_transformer import DiffusionTransformer
+except ModuleNotFoundError as e:
+    warnings.warn(f"{e}. StoryGen MBO tasks are not available.")
 
 
 class DiffusionLM(nn.Module, PyTorchModelHubMixin):

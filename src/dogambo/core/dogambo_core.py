@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from typing import Final, Optional, Sequence
 
 from .base import BaseObjectiveTransform
-from ..metrics import KLDivergence
+from ..metrics import KLDivergence, ChiSquaredDivergence
 from ..models import ExplicitDual, LipschitzMLP
 from ..utils import p_tau_ref
 
@@ -32,6 +32,8 @@ class DOGAMBOTransform(BaseObjectiveTransform):
         tau: float = 1.0,
         W0: float = 0.0,
         dual_step_size: float = 0.01,
+        mixed_chi_squared_weighting: Optional[float] = None,
+        ablate_critic: bool = False,
         seed: Optional[int] = 0,
         **kwargs
     ):
@@ -50,6 +52,9 @@ class DOGAMBOTransform(BaseObjectiveTransform):
             W0: the Wasserstein threshold constant. Default 0.0.
             dual_step_size: the step size for solving the dual problem.
                 Default 0.01.
+            mixed_chi_squared_weighting: the weighting of the Chi-squared
+                divergence term. Default not used.
+            ablate_critic: whether to turn off source critic feedback.
             seed: optional random seed. Default 0.
         """
         super().__init__(
@@ -59,10 +64,15 @@ class DOGAMBOTransform(BaseObjectiveTransform):
             tau=tau,
             W0=W0,
             dual_step_size=dual_step_size,
+            mixed_chi_squared_weighting=mixed_chi_squared_weighting,
+            ablate_critic=ablate_critic,
             seed=seed,
             **kwargs
         )
         self.kld = KLDivergence()
+        if self.mixed_chi_squared_weighting is not None:
+            self.xsd = ChiSquaredDivergence()
+
         self.eps: Final[float] = np.finfo(np.float32).eps
         self.xp = xp
         self.yp = yp
@@ -74,6 +84,8 @@ class DOGAMBOTransform(BaseObjectiveTransform):
             ),
             W0=self.W0,
             dual_step_size=self.dual_step_size,
+            mixed_chi_squared_weighting=self.mixed_chi_squared_weighting,
+            ablate_critic=self.ablate_critic,
             seed=self.seed
         )
 
@@ -90,7 +102,17 @@ class DOGAMBOTransform(BaseObjectiveTransform):
             xq.mean() - self.xp.mean(),
             torch.log(xq.std().square() + self.xp.std().square())
         )
-        return yq - self.beta * self.g.lambd * F.relu(
+        gamma = 1.0
+        if self.mixed_chi_squared_weighting is not None:
+            coeff = self.mixed_chi_squared_weighting * (
+                self.beta / (self.tau + self.eps)
+            )
+            yq -= coeff * self.xsd(
+                xq.mean() - self.xp.mean(),
+                torch.log(xq.std().square() + self.xp.std().square())
+            )
+            gamma += self.mixed_chi_squared_weighting
+        return yq - self.beta * gamma * self.g.lambd * F.relu(
             self.g.critic(self.xp).mean() - self.g.critic(xq) - self.W0
         )
 

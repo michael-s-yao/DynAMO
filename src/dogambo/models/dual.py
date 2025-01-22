@@ -21,6 +21,8 @@ class ExplicitDual(nn.Module):
         critic: nn.Module,
         batch_size: int = 1024,
         dual_step_size: float = 0.001,
+        mixed_chi_squared_weighting: Optional[float] = None,
+        ablate_critic: bool = False,
         W0: float = 0.0,
         seed: Optional[int] = 0,
         **kwargs
@@ -35,6 +37,9 @@ class ExplicitDual(nn.Module):
             batch_size: the number of datums to use to approximate the
                 reference distribution empirically. Default 1024.
             dual_step_size: the step size for dual variable optimization.
+            mixed_chi_squared_weighting: the weighting of the Chi-squared
+                divergence term. Default not used.
+            ablate_critic: whether to turn off source critic feedback.
             W0: the 1-Wasserstein distance threshold hyperparameter.
                 Default 0.0.
             seed: random seed. Default 0.
@@ -49,6 +54,8 @@ class ExplicitDual(nn.Module):
         self._seed: Final[Optional[int]] = seed
         self._rng = np.random.default_rng(seed=self._seed)
         self._lambd = torch.ones(1).to(next(self.critic.parameters()))
+        self._mixed_chi_squared_weighting = mixed_chi_squared_weighting
+        self._ablate_critic = ablate_critic
 
         for key, val in kwargs.items():
             setattr(self, key, val)
@@ -69,7 +76,14 @@ class ExplicitDual(nn.Module):
         ptau = ptau / ptau.sum()
 
         g = -1.0 * (ptau * self.fs_star(lambd * self.critic(xp))).sum(dim=0)
-        return g + (lambd * ((ptau * self.critic(xp)).sum(dim=0) - self._W0))
+        g = g + (lambd * ((ptau * self.critic(xp)).sum(dim=0) - self._W0))
+        if self._mixed_chi_squared_weighting:
+            g = g - (
+                self._mixed_chi_squared_weighting * (
+                    (ptau * self.fx2_star(lambd * self.critic(xp))).sum(dim=0)
+                )
+            )
+        return g
 
     @staticmethod
     def fs_star(v: torch.Tensor) -> torch.Tensor:
@@ -82,6 +96,17 @@ class ExplicitDual(nn.Module):
         """
         return torch.exp(v - 1.0)
 
+    @staticmethod
+    def fx2_star(v: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the Fenchel conjugate of the function fx2(u) = (u - 1)^2 / 2.
+        Input:
+            v: the dual input to the Fenchel conjugate.
+        Returns:
+            The Fenchel conjugate of fx2(u) evaluated at the point(s) v.
+        """
+        return (torch.square(v) / 2.0) + v
+
     @property
     def lambd(self) -> torch.Tensor:
         """
@@ -91,6 +116,8 @@ class ExplicitDual(nn.Module):
         Returns:
             The optimal value of the Lagrange multiplier lambda.
         """
+        if self._ablate_critic:
+            return torch.tensor([0.0]).to(self._lambd)
         self._lambd = self._lambd.requires_grad_(True)
         lambd_optimizer = torch.optim.Adam(
             [self._lambd], lr=self._dual_step_size, maximize=True
@@ -131,6 +158,8 @@ class ExplicitDual(nn.Module):
         Returns:
             None.
         """
+        if self._ablate_critic:
+            return
         self.critic.fit(
             Xp=Xp,
             Xq=Xq,
