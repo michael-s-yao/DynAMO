@@ -7,7 +7,7 @@ Author(s):
 
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
-import dogambo
+import dynamo
 import click
 import design_bench
 import numpy as np
@@ -46,7 +46,7 @@ from typing import Optional, Tuple, Union
 @click.option(
     "--diversity-metric",
     "-d",
-    type=click.Choice(dogambo.metrics.get_diversity_metric_options()),
+    type=click.Choice(dynamo.metrics.get_diversity_metric_options()),
     multiple=True,
     help="Diversity metric(s) to use."
 )
@@ -82,7 +82,7 @@ def main(
 ):
     """Optimizer evaluation script for analyzing experimental results."""
     task, task_name = design_bench.make(task), task
-    dm = dogambo.data.DesignBenchDataModule(task, seed=0)
+    dm = dynamo.data.DesignBenchDataModule(task, seed=0)
     dm.prepare_data()
     dm.setup()
 
@@ -126,14 +126,14 @@ def main(
             if task_name in [
                 "TFBind8-Exact-v0", "TFBind10-Exact-v0", "UTR-ResNet-v0"
             ]:
-                embedder = dogambo.embed.DNABERT()
+                embedder = dynamo.embed.DNABERT()
             elif task_name in ["GFP-Transformer-v0"]:
-                embedder = dogambo.embed.ESM2()
+                embedder = dynamo.embed.ESM2()
             elif task_name in [
                 "ChEMBL_MCHC_CHEMBL3885882_MorganFingerprint-RandomForest-v0",
                 "PenalizedLogP-Exact-v0"
             ]:
-                embedder = dogambo.embed.ChemBERT()
+                embedder = dynamo.embed.ChemBERT()
             else:
                 embedder = nn.Identity()
             _designs = map(embedder, designs)
@@ -142,7 +142,7 @@ def main(
 
         diversity = []
         for x in _designs:
-            y = dogambo.metrics.compute_diversity(x, reference, metric=metric)
+            y = dynamo.metrics.compute_diversity(x, reference, metric=metric)
             if task.is_discrete and metric.lower() != "l1-coverage":
                 y = y / task.input_size
             diversity.append(y.item())

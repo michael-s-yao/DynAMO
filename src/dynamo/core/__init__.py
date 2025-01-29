@@ -9,7 +9,7 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 from typing import Sequence
 from .base import BaseObjectiveTransform, IdentityTransform
-from .dogambo_core import DOGAMBOTransform
+from .dynamo_core import DynAMOTransform
 from .gambo import GAMBOTransform
 from .roma import RoMATransform
 from .coms import COMsTransform
@@ -19,7 +19,7 @@ from .romo import ROMOTransform
 __all__ = [
     "BaseObjectiveTransform",
     "IdentityTransform",
-    "DOGAMBOTransform",
+    "DynAMOTransform",
     "GAMBOTransform",
     "RoMATransform",
     "ROMOTransform",

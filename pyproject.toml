@@ -3,9 +3,9 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dogambo"
-version = "0.0.1"
-description = "Diversity-optimized generative adversarial offline optimization"
+name = "dynamo"
+version = "1.0.0"
+description = "Diversity in adversarial model-based optimization"
 readme = "README.md"
 requires-python = "<3.9"
 license = {file = "LICENSE"}
@@ -51,10 +51,10 @@ dependencies = [
 dev = ["flake8", "matplotlib"]
 
 [project.urls]
-"Homepage" = "https://github.com/michael-s-yao/do-gambo"
+"Homepage" = "https://github.com/michael-s-yao/dynamo"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dogambo = ["*.gz"]
+dynamo = ["*.gz"]

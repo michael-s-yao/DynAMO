@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Defines the explicit dual function for DO-GAMBO.
+Defines the explicit dual function for DynAMO.
 
 Author(s):
     Michael Yao @michael-s-yao

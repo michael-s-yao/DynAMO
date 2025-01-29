@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-envname=${1:-dogambo}
+envname=${1:-dynamo}
 
 # Create the conda environment.
 conda create -n $envname python=3.8 -y

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """
-Diversity-optimized generative adversarial model-based optimization (DO-GAMBO).
+(D)iversit(y) i(n) (A)dversarial (M)odel-based (O)ptimization (DynAMO)
+forward surrogate model pre-training script.
 
 Author(s):
     Michael Yao @michael-s-yao
@@ -9,7 +10,7 @@ Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import click
 import design_bench
-import dogambo
+import dynamo
 import lightning.pytorch as pl
 from typing import Optional
 
@@ -74,11 +75,11 @@ def main(
     if not task.is_discrete:
         task.map_normalize_x()
 
-    dm = dogambo.data.DesignBenchDataModule(
+    dm = dynamo.data.DesignBenchDataModule(
         task, batch_size=batch_size, seed=seed
     )
 
-    model = dogambo.models.EncDecPropModule(
+    model = dynamo.models.EncDecPropModule(
         task, lr=lr, alpha=alpha, beta=beta
     )
 

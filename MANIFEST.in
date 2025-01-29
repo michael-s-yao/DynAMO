@@ -1,1 +1,1 @@
-include src/dogambo/oracle/*.pkl.gz
+include src/dynamo/oracle/*.pkl.gz

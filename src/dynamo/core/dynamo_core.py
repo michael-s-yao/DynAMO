@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """
-Diversity-optimized generative adversarial model-based optimization
-(DO-GAMBO) offline objective transform module implementation.
+Diversity in adversarial model-based optimization (DynAMO) offline objective
+transform module implementation.
 
 Author(s):
     Michael Yao @michael-s-yao
@@ -19,8 +19,8 @@ from ..models import ExplicitDual, LipschitzMLP
 from ..utils import p_tau_ref
 
 
-class DOGAMBOTransform(BaseObjectiveTransform):
-    name: Final[str] = "DOGAMBOTransform"
+class DynAMOTransform(BaseObjectiveTransform):
+    name: Final[str] = "DynAMOTransform"
 
     def __init__(
         self,
@@ -91,7 +91,7 @@ class DOGAMBOTransform(BaseObjectiveTransform):
 
     def forward(self, xq: torch.Tensor, **kwargs) -> torch.Tensor:
         """
-        Forward pass through the DOGAMBO objective transform.
+        Forward pass through the DynAMO objective transform.
         Input:
             xq: the input batch of designs to the surrogate model.
         Returns:

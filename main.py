@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Diversity-optimized generative adversarial model-based optimization (DO-GAMBO).
+(D)iversit(y) i(n) (A)dversarial (M)odel-based (O)ptimization (DynAMO).
 
 Author(s):
     Michael Yao @michael-s-yao
@@ -18,7 +18,7 @@ from botorch.utils.transforms import unnormalize
 from pathlib import Path
 from typing import Optional, Union
 
-import dogambo
+import dynamo
 
 
 @click.command()
@@ -35,14 +35,14 @@ import dogambo
     "--optimizer",
     "-o",
     required=True,
-    type=click.Choice(dogambo.optim.get_optimizers()),
+    type=click.Choice(dynamo.optim.get_optimizers()),
     help="Backbone optimizer."
 )
 @click.option(
     "--transform",
     "-f",
     required=True,
-    type=click.Choice(dogambo.core.get_transforms()),
+    type=click.Choice(dynamo.core.get_transforms()),
     help="Forward surrogate model transform."
 )
 @click.option(
@@ -190,27 +190,27 @@ def main(
     task_name, oracle_kwargs = task, {}
     if task == "StoryGen-Exact-v0" and transform == "GAMBOTransform":
         oracle_kwargs["device_id"] = -1 + (2 * (torch.cuda.device_count() > 1))
-    task = dogambo.make(task_name, oracle_kwargs=oracle_kwargs)
+    task = dynamo.make(task_name, oracle_kwargs=oracle_kwargs)
     if not task.is_discrete:
         task.map_normalize_x()
 
-    dm = dogambo.data.DesignBenchDataModule(
+    dm = dynamo.data.DesignBenchDataModule(
         task, batch_size=batch_size, seed=seed
     )
     dm.prepare_data()
     dm.setup()
 
     if str(pretraining_strategy).strip().lower() == "roma":
-        model = dogambo.models.EncDecPropModule.load_from_RoMA_checkpoint(
-            dogambo.utils.get_model_ckpt(task_name), task=task
+        model = dynamo.models.EncDecPropModule.load_from_RoMA_checkpoint(
+            dynamo.utils.get_model_ckpt(task_name), task=task
         )
     elif str(pretraining_strategy).strip().lower() == "coms":
-        model = dogambo.models.EncDecPropModule.load_from_COMs_checkpoint(
-            dogambo.utils.get_model_ckpt(task_name), task=task
+        model = dynamo.models.EncDecPropModule.load_from_COMs_checkpoint(
+            dynamo.utils.get_model_ckpt(task_name), task=task
         )
     else:
-        model = dogambo.models.EncDecPropModule.load_from_checkpoint(
-            dogambo.utils.get_model_ckpt(task_name), task=task
+        model = dynamo.models.EncDecPropModule.load_from_checkpoint(
+            dynamo.utils.get_model_ckpt(task_name), task=task
         )
     vae, surrogate = model.vae, model.surrogate
     device = next(model.parameters()).device
@@ -235,7 +235,7 @@ def main(
         xp, bounds = xp.to(device), bounds.to(device)
     xp, bounds = xp.double(), bounds.double()
 
-    forward_model = getattr(dogambo.core, transform)(
+    forward_model = getattr(dynamo.core, transform)(
         surrogate,
         vae=vae,
         xp=xp,
@@ -251,7 +251,7 @@ def main(
         seed=seed
     )
 
-    policy = getattr(dogambo.optim, optimizer)(
+    policy = getattr(dynamo.optim, optimizer)(
         batch_size=batch_size,
         ndim=xp.size(dim=-1),
         sampling_bounds=bounds,
@@ -261,14 +261,14 @@ def main(
         device=device
     )
 
-    state = dogambo.optim.OptimizerState(
+    state = dynamo.optim.OptimizerState(
         task_name,
         task,
         model,
         savedir,
         num_restarts=num_restarts,
         patience=patience,
-        logger=dogambo.metrics.get_logger(),
+        logger=dynamo.metrics.get_logger(),
         seed=seed
     )
 

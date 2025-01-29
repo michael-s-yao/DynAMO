@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Diversity-optimized generative adversarial model-based optimization (DO-GAMBO).
+(D)iversit(y) i(n) (A)dversarial (M)odel-based (O)ptimization (DynAMO).
 
 Author(s):
     Michael Yao @michael-s-yao
@@ -133,8 +133,8 @@ def make(
 
 register(
     "StoryGen-Exact-v0",
-    "dogambo.data:StoryGenerationDataset",
-    "dogambo.oracle:StoryGenerationOracle",
+    "dynamo.data:StoryGenerationDataset",
+    "dynamo.oracle:StoryGenerationOracle",
     dataset_kwargs={
         "max_samples": None,
         "distribution": None,
@@ -147,8 +147,8 @@ register(
 
 register(
     "PenalizedLogP-Exact-v0",
-    "dogambo.data:PenalizedLogPDataset",
-    "dogambo.oracle:PenalizedLogPOracle",
+    "dynamo.data:PenalizedLogPDataset",
+    "dynamo.oracle:PenalizedLogPOracle",
     dataset_kwargs={
         "max_samples": None,
         "distribution": None,
@@ -161,8 +161,8 @@ register(
 
 register(
     "Branin-Exact-v0",
-    "dogambo.data:BraninDataset",
-    "dogambo.oracle:BraninOracle",
+    "dynamo.data:BraninDataset",
+    "dynamo.oracle:BraninOracle",
     dataset_kwargs={
         "max_samples": None,
         "distribution": None,

@@ -17,8 +17,8 @@ Citation(s):
 Licensed under the MIT License. Copyright University of Pennsylvania 2024.
 """
 import numpy as np
-from dogambo.data import StoryGenerationDataset
-from dogambo.models import StoryGenerationOracle, DiffusionLM
+from dynamo.data import StoryGenerationDataset
+from dynamo.models import StoryGenerationOracle, DiffusionLM
 from math import ceil
 from pathlib import Path
 from typing import Union

@@ -21,6 +21,36 @@ from tqdm import tqdm
 from typing import Optional, Sequence
 
 
+class HammingDistance(nn.Module):
+    def forward(
+        self, xq: torch.Tensor, xp: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        Returns an matrix of the pairwise Hamming distances between each of
+        the input fixed-length strings.
+        Input:
+            xq: an ND matrix of fixed-length tokenized strings, where N is
+                the number of strings and D is the string length.
+            xp: an optional MD matrix of fixed-length tokenized strings, where
+                M is the number of reference strings.
+        Returns:
+            An NxN (NxM is xp is provided) matrix of the pairwise Hamming
+            distances between each of the strings.
+        """
+        if xp is None:
+            xp = xq.clone()
+        assert not (torch.is_floating_point(xq) or torch.is_floating_point(xp))
+        dists = torch.vstack([
+            torch.where(xp != x, 1, 0).sum(dim=-1) for x in xq
+        ])
+        assert dists.size() == torch.Size((xq.size(dim=0), xp.size(dim=0)))
+        assert (not torch.allclose(xq, xp)) or torch.allclose(dists, dists.T)
+        assert (not torch.allclose(xq, xp)) or torch.allclose(
+            torch.diagonal(dists), torch.zeros(xq.size(dim=0)).to(dists)
+        )
+        return dists
+
+
 def get_diversity_metric_options() -> Sequence[str]:
     """
     Returns a list of the implemented diversity metric options.
@@ -96,7 +126,7 @@ def get_logger() -> logging.Logger:
     Returns:
         The logger object associated with the package.
     """
-    logger = logging.getLogger("dogambo")
+    logger = logging.getLogger("dynamo")
     logger.setLevel(logging.INFO)
     logger.addHandler(logging.StreamHandler())
     return logger
@@ -118,7 +148,9 @@ def L1_coverage(xq: torch.Tensor) -> torch.Tensor:
     )
 
 
-def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
+def pairwise_diversity(
+    xq: torch.Tensor, fixed_length: bool = False
+) -> torch.Tensor:
     """
     Computes the average Levenshtein distance between any two unique discrete
     sequences from a dataset of generated designs, or the average L2 distance
@@ -126,6 +158,10 @@ def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
     Input:
         xq: the batch of generated designs of shape ND, where N is the number
             of generated designs and D is the sequence length.
+        fixed_length: if xq is a set of discrete designs, then this variable
+            represents whether we can treat the lengths of each of the strings
+            as fixed. This allows us to simplify the Levenshtein distance to
+            the Hamming distance where only substitutions are considered.
     Returns:
         The average Levenshtein distance over the dataset.
     Citation(s):
@@ -135,6 +171,9 @@ def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
     """
     metric = NMSELoss()
     if not torch.is_floating_point(xq):
+        if fixed_length:
+            metric = HammingDistance()
+            return metric(xq).sum() / (xq.size(dim=0) * (xq.size(dim=0) - 1))
         metric = EditDistance(reduction=None)
         xq = ["".join([chr(65 + x) for x in seq]) for seq in xq]
     else:
@@ -144,7 +183,7 @@ def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
         ]
         return sum(results) / float(len(xq))
 
-    def novelty(idx: int, q: mp.Queue) -> None:
+    def diversity(idx: int, q: mp.Queue) -> None:
         return q.put(
             metric([xq[idx] for _ in range(len(xq))], xq).sum() / (len(xq) - 1)
         )
@@ -152,7 +191,7 @@ def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
     jobs = []
     q = mp.Queue()
     for i in tqdm(range(len(xq))):
-        jobs.append(mp.Process(target=novelty, args=(i, q)))
+        jobs.append(mp.Process(target=diversity, args=(i, q)))
     for job in jobs:
         job.start()
     for job in jobs:
@@ -161,7 +200,9 @@ def pairwise_diversity(xq: torch.Tensor) -> torch.Tensor:
     return sum(results) / float(len(xq))
 
 
-def minimum_novelty(xq: torch.Tensor, xp: torch.Tensor) -> torch.Tensor:
+def minimum_novelty(
+    xq: torch.Tensor, xp: torch.Tensor, fixed_length: bool = False
+) -> torch.Tensor:
     """
     Computes the novelty of a set of generated compared to previous designs.
     Input:
@@ -169,6 +210,10 @@ def minimum_novelty(xq: torch.Tensor, xp: torch.Tensor) -> torch.Tensor:
             of generated designs and D the number of design dimensions.
         xp: a batch of reference designs of shape MD, where M is the number of
             true reference designs.
+        fixed_length: if xq is a set of discrete designs, then this variable
+            represents whether we can treat the lengths of each of the strings
+            as fixed. This allows us to simplify the Levenshtein distance to
+            the Hamming distance where only substitutions are considered.
     Returns:
         The average minimum novelty of each of the generated designs.
     Citation(s):
@@ -178,6 +223,9 @@ def minimum_novelty(xq: torch.Tensor, xp: torch.Tensor) -> torch.Tensor:
     """
     metric = NMSELoss()
     if not torch.is_floating_point(xq):
+        if fixed_length:
+            metric = HammingDistance()
+            return metric(xq, xp).min(dim=-1) / xq.size(dim=0)
         metric = EditDistance(reduction=None)
         xq = ["".join([chr(65 + x) for x in seq]) for seq in xq]
         xp = ["".join([chr(65 + x) for x in seq]) for seq in xp]
@@ -203,7 +251,10 @@ def minimum_novelty(xq: torch.Tensor, xp: torch.Tensor) -> torch.Tensor:
 
 
 def compute_diversity(
-    xq: torch.Tensor, xp: Optional[torch.Tensor] = None, metric: str = ""
+    xq: torch.Tensor,
+    xp: Optional[torch.Tensor] = None,
+    metric: str = "",
+    fixed_length: bool = False,
 ) -> Optional[torch.Tensor]:
     """
     Computes the diversity of a set of generated designs.
@@ -213,6 +264,10 @@ def compute_diversity(
         xp: an optional batch of reference designs of shape MD, where M is the
             number of true reference designs.
         metric: the diversity metric to use.
+        fixed_length: if xq is a set of discrete designs, then this variable
+            represents whether we can treat the lengths of each of the strings
+            as fixed. This allows us to simplify the Levenshtein distance to
+            the Hamming distance where only substitutions are considered.
     Returns:
         The diversity of the generated designs.
     """
@@ -222,8 +277,8 @@ def compute_diversity(
     elif metric == "l1_coverage":
         return L1_coverage(xq)
     elif metric == "pairwise_diversity":
-        return pairwise_diversity(xq)
+        return pairwise_diversity(xq, fixed_length=fixed_length)
     elif metric == "minimum_novelty":
         assert xp is not None
-        return minimum_novelty(xq, xp)
+        return minimum_novelty(xq, xp, fixed_length=fixed_length)
     return None

@@ -12,8 +12,8 @@ import pandas as pd
 import torch
 import yaml
 from botorch.utils.transforms import unnormalize
-from dogambo.oracle import BraninOracle
-from dogambo.data import BraninDataset
+from dynamo.oracle import BraninOracle
+from dynamo.data import BraninDataset
 from pathlib import Path
 from typing import Optional, Union
 

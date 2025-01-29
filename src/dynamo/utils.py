@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 """
-Utility functions for diversity-optimized generative adversarial model-based
-optimization (DO-GAMBO).
+Utilities for diversity in adversarial model-based optimization (DynAMO).
 
 Author(s):
     Michael Yao @michael-s-yao

@@ -23,7 +23,7 @@ from datasets import Dataset, DatasetDict
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
-import dogambo
+import dynamo
 
 
 @click.command()
@@ -62,7 +62,7 @@ def main(
     val_fn: Union[Path, str],
     dataset_savename: Optional[Union[Path, str]] = None,
     tokenizer_savename: Optional[Union[Path, str]] = None
-) -> Tuple[DatasetDict, dogambo.data.SELFIESTokenizer]:
+) -> Tuple[DatasetDict, dynamo.data.SELFIESTokenizer]:
     """Construct the Penalized LogP custom MBO offline dataset."""
     train = []
     with open(train_fn, "r") as f:
@@ -81,7 +81,7 @@ def main(
                 continue
     vocab = sf.get_alphabet_from_selfies(train + val)
 
-    tokenizer = dogambo.data.SELFIESTokenizer()
+    tokenizer = dynamo.data.SELFIESTokenizer()
     tokenizer.add_tokens(sorted(list(vocab)))
     tokenizer.add_special_tokens({
         "bos_token": "<start>", "eos_token": "<stop>"
@@ -96,7 +96,7 @@ def main(
     train = tokenizer(train, return_tensors="pt", padding=True)["input_ids"]
     val = tokenizer(val, return_tensors="pt", padding=True)["input_ids"]
 
-    oracle = dogambo.oracle.PenalizedLogPOracle(None)
+    oracle = dynamo.oracle.PenalizedLogPOracle(None)
 
     ytrain = oracle(train)[..., np.newaxis]
     yval = oracle(val)[..., np.newaxis]

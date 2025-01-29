@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Custom datasets for DO-GAMBO experiments.
+Custom datasets for DynAMO experiments.
 
 Author(s):
     Michael Yao @michael-s-yao
