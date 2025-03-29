@@ -51,13 +51,6 @@ from typing import Optional, Tuple, Union
     help="Diversity metric(s) to use."
 )
 @click.option(
-    "--pretraining-strategy",
-    type=click.Choice(["None", "COMs", "RoMA"], case_sensitive=False),
-    default=None,
-    show_default=True,
-    help="Optional forward surrogate model pretraining strategy."
-)
-@click.option(
     "--seed",
     type=int,
     default=0,
@@ -71,17 +64,30 @@ from typing import Optional, Tuple, Union
     show_default=True,
     help="Maximum number of reference samples. Default None."
 )
+@click.option(
+    "--secondary-objective",
+    type=int,
+    default=-1,
+    show_default=True,
+    help="Secondary objective to evaluate for multiobjective-derived problems."
+)
 def main(
     task: str,
     oracle_budget: int,
     savedir: Union[Path, str],
     diversity_metric: Tuple[str],
-    pretraining_strategy: Optional[str] = None,
     seed: int = 0,
     max_samples: Optional[int] = -1,
+    secondary_objective: Optional[int] = None,
 ):
     """Optimizer evaluation script for analyzing experimental results."""
-    task, task_name = design_bench.make(task), task
+    oracle_kwargs = {}
+    if secondary_objective is not None and secondary_objective > 0 and (
+        task != "UTR-ResNet-v0"
+    ):
+        oracle_kwargs["objective_idx"] = secondary_objective
+    task_name = task
+    task = design_bench.make(task, oracle_kwargs=oracle_kwargs)
     dm = dynamo.data.DesignBenchDataModule(task, seed=0)
     dm.prepare_data()
     dm.setup()
@@ -94,7 +100,14 @@ def main(
                 "max_percentile": 100.0, "min_percentile": 0.0
             }
         )
-    ymin, ymax = tmp.y.min(), tmp.y.max()
+
+    if task_name == "UTR-ResNet-v0" and secondary_objective == 1:
+        ymin, ymax, oracle = 0.0, 1.0, dynamo.oracle.GCContentOracle()
+    elif secondary_objective is None or secondary_objective <= 0:
+        ymin, ymax = tmp.y.min(), tmp.y.max()
+    else:
+        y = task.predict(tmp.x)
+        ymin, ymax = y.min(), y.max()
 
     results = [
         np.load(os.path.join(savedir, fn)) for fn in filter(
@@ -106,12 +119,22 @@ def main(
         predictions = data["predictions"].squeeze()
         idxs = np.argsort(predictions)[-min(oracle_budget, len(predictions)):]
         designs.append(torch.from_numpy(data["designs"][idxs]))
-        scores.append((data["scores"].squeeze()[idxs] - ymin) / (ymax - ymin))
+        if task_name == "UTR-ResNet-v0" and secondary_objective == 1:
+            sc = oracle.protected_predict(data["designs"][idxs]).squeeze()
+        elif secondary_objective is None or secondary_objective <= 0:
+            sc = data["scores"].squeeze()[idxs]
+        else:
+            sc = task.predict(data["designs"][idxs]).squeeze()
+        scores.append((sc - ymin) / (ymax - ymin))
     if torch.cuda.is_available():
         designs = [x.cuda() for x in designs]
 
     click.echo(f"Max Score: {[np.max(y) for y in scores]}")
     click.echo(f"Median Score: {[np.median(y) for y in scores]}")
+    if secondary_objective is not None and secondary_objective > 0:
+        click.echo(f"Mean Score: {[np.mean(y) for y in scores]}")
+        click.echo(f"Standard Devation Score: {[np.std(y) for y in scores]}")
+        click.echo(f"Range Score: {[y.max() - y.min() for y in scores]}")
 
     reference = dm.val.x
     if max_samples is not None and len(reference) > max_samples > 0:

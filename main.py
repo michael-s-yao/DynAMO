@@ -283,7 +283,8 @@ def main(
             new_xq = unnormalize(sobol.draw(batch_size).to(bounds), bounds)
             qtt = None
         elif state.designs is None:
-            best_idxs = np.argsort(y.squeeze())[-batch_size:]
+            best_idxs = np.argsort(y.detach().cpu().numpy().squeeze())
+            best_idxs = best_idxs[-batch_size:]
             rng.shuffle(best_idxs)
             new_xq = xp[best_idxs]
             qtt = None

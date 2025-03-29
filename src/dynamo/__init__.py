@@ -171,3 +171,31 @@ register(
     },
     oracle_kwargs={}
 )
+
+
+register(
+    "VehicleSafety-Exact-v0",
+    "dynamo.data:VehicleSafetyDataset",
+    "dynamo.oracle:VehicleSafetyOracle",
+    dataset_kwargs={
+        "max_samples": None,
+        "distribution": None,
+        "max_percentile": 80.0,
+        "min_percentile": 0.0
+    },
+    oracle_kwargs={}
+)
+
+
+register(
+    "WeldedBeam-Exact-v0",
+    "dynamo.data:WeldedBeamDataset",
+    "dynamo.oracle:WeldedBeamOracle",
+    dataset_kwargs={
+        "max_samples": None,
+        "distribution": None,
+        "max_percentile": 80.0,
+        "min_percentile": 0.0
+    },
+    oracle_kwargs={}
+)

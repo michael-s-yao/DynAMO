@@ -12,6 +12,7 @@ from .db import DesignBenchBatch, DesignBenchDataModule
 from .stories import StoryGenerationDataset
 from .selfies import SELFIESTokenizer, PenalizedLogPDataset
 from .branin import BraninDataset
+from .multi import VehicleSafetyDataset, WeldedBeamDataset
 
 
 __all__ = [
@@ -21,5 +22,7 @@ __all__ = [
     "StoryGenerationDataset",
     "SELFIESTokenizer",
     "PenalizedLogPDataset",
-    "BraninDataset"
+    "BraninDataset",
+    "VehicleSafetyDataset",
+    "WeldedBeamDataset"
 ]
