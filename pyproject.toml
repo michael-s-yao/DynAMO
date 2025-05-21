@@ -7,7 +7,7 @@ name = "dynamo"
 version = "1.0.0"
 description = "Diversity in adversarial model-based optimization"
 readme = "README.md"
-requires-python = "<3.9"
+requires-python = ">3.7"
 license = {file = "LICENSE"}
 keywords = ["offline-optimization", "AI4Science"]
 authors = [
